@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{% if followup_mode %}Add follow-up{% else %}Find patient{% endif %}{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h4 mb-0">
+    {% if followup_mode %}<i class="bi bi-calendar-plus text-purple"></i> Add follow-up visit{% else %}<i class="bi bi-search"></i> Find patient{% endif %}
+  </h1>
+  {% if can_register %}<a class="btn btn-success" href="{% url 'patient_create' %}"><i class="bi bi-person-plus"></i> New patient</a>{% endif %}
+</div>
+
+<form method="get" class="mb-3">
+  {% if followup_mode %}<input type="hidden" name="mode" value="followup">{% endif %}
+  <div class="input-group input-group-lg">
+    <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+    {{ form.q }}
+    <button class="btn btn-primary">Search</button>
+  </div>
+  {% if followup_mode %}<div class="form-text">Find the patient, then click <strong>Start follow-up</strong>. The last visit's case details are carried forward.</div>{% endif %}
+</form>
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr><th>OPD No.</th><th>Name</th><th>Age / Sex</th><th>Mobile</th><th>Registered</th><th class="text-center">Visits</th><th></th></tr>
+      </thead>
+      <tbody>
+      {% for p in page %}
+        <tr>
+          <td class="fw-semibold">{{ p.opd_number }}</td>
+          <td><a href="{% url 'patient_detail' p.pk %}" class="text-decoration-none">{{ p.full_name }}</a></td>
+          <td>{{ p.age }} / {{ p.gender }}</td>
+          <td>{{ p.phone }}</td>
+          <td>{{ p.registration_date|date:"d-M-Y" }}</td>
+          <td class="text-center">{{ p.visit_count }}</td>
+          <td class="text-end text-nowrap">
+            {% if followup_mode and can_register %}
+              <form method="post" action="{% url 'visit_create' p.pk %}" class="d-inline">{% csrf_token %}
+                <button class="btn btn-sm btn-outline-primary"><i class="bi bi-calendar-plus"></i> Start follow-up</button>
+              </form>
+            {% else %}
+              <a class="btn btn-sm btn-outline-secondary" href="{% url 'patient_detail' p.pk %}">Open</a>
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="text-center text-muted py-4">{% if q %}No patients match “{{ q }}”.{% else %}No patients registered yet.{% endif %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% include "partials/pagination.html" %}
+{% endblock %}

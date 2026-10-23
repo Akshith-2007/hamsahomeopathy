@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hamsa}
+      POSTGRES_USER: ${POSTGRES_USER:-hamsa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hamsa-dev-password}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  web:
+    build: .
+    image: hamsa-homeo:latest
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      RUN_MIGRATIONS: "true"
+    ports:
+      - "5000:5000"
+    volumes:
+      - media:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  media:

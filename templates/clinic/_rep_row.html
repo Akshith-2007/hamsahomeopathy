@@ -1,0 +1,9 @@
+<tr data-row>
+  <td class="sn"></td>
+  <td>{% for h in form.hidden_fields %}{{ h }}{% endfor %}<span class="d-none">{{ form.DELETE }}</span>{{ form.non_field_errors }}{{ form.symptom }}</td>
+  <td>{{ form.rubric }}{{ form.rubric.errors }}</td>
+  <td>{{ form.book }}</td>
+  <td>{{ form.grade }}</td>
+  <td>{{ form.remedies }}{{ form.remedies.errors }}</td>
+  {% if access.repertory.edit %}<td class="text-center"><button type="button" class="btn btn-link text-danger p-0" data-del-row title="Delete row"><i class="bi bi-trash"></i></button></td>{% endif %}
+</tr>

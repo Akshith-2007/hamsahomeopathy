@@ -1,0 +1,7 @@
+<span class="file-chip">
+  <i class="bi bi-{% if f.is_pdf %}file-earmark-pdf text-danger{% elif f.is_image %}file-earmark-image text-primary{% else %}file-earmark-text{% endif %}"></i>
+  <a href="{{ f.file.url }}" target="_blank" rel="noopener">{{ f.title|default:f.filename|truncatechars:28 }}</a>
+  {% if f.source %}<span class="badge text-bg-{% if f.source == 'LAB' %}success{% else %}secondary{% endif %}">{{ f.source|title }}</span>{% endif %}
+  <span class="text-muted">{{ f.created_at|date:"d-M" }}{% if f.created_by %} · {{ f.created_by }}{% endif %}</span>
+  {% if can_remove %}<button type="button" class="btn btn-link btn-sm text-danger p-0" data-delete-url="{% url 'upload_delete' kind f.pk %}" title="Remove"><i class="bi bi-x-circle"></i></button>{% endif %}
+</span>

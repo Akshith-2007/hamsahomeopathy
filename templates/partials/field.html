@@ -1,0 +1,4 @@
+<div class="field-row{% if extra_class %} {{ extra_class }}{% endif %}">
+  <label for="{{ field.id_for_label }}">{% if icon %}<i class="bi bi-{{ icon }}"></i>{% endif %}{{ label|default:field.label }}{% if field.field.required and not field.field.disabled %} <span class="text-danger">*</span>{% endif %}</label>
+  <div class="field">{{ field }}{{ field.errors }}</div>
+</div>

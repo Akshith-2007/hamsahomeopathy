@@ -1,0 +1,12 @@
+# Uploaded photos, reports and images. ReadWriteOnce keeps the web Deployment at
+# one replica; use a ReadWriteMany storage class (NFS, CephFS, EFS…) to scale out.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hamsa-media
+  namespace: hamsa
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 10Gi

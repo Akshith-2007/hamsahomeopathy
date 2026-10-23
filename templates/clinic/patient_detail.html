@@ -1,0 +1,92 @@
+{% extends "base.html" %}{% load clinic_tags %}
+{% block title %}{{ patient.full_name }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <a href="{% url 'patient_list' %}" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Patients</a>
+    <h1 class="h4 mb-0">{{ patient.full_name }} <span class="badge text-bg-primary">{{ patient.opd_number }}</span></h1>
+  </div>
+  <div class="d-flex gap-2">
+    {% if patient.latest_visit %}<a class="btn btn-primary" href="{% url 'visit_record' patient.latest_visit.pk %}"><i class="bi bi-file-medical"></i> Open latest case record</a>{% endif %}
+    {% if can_add_visit %}
+    <form method="post" action="{% url 'visit_create' patient.pk %}">{% csrf_token %}
+      <button class="btn btn-outline-primary"><i class="bi bi-calendar-plus"></i> {% if patient.latest_visit %}Start follow-up visit{% else %}Start visit{% endif %}</button>
+    </form>
+    {% endif %}
+    {% if can_delete_patient %}
+    <form method="post" action="{% url 'patient_delete' patient.pk %}" onsubmit="return confirm('Delete this patient and all visits? The record is kept in the audit trail.');">{% csrf_token %}
+      <button class="btn btn-outline-danger"><i class="bi bi-trash"></i></button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body text-center">
+        {% if patient.photo %}
+          <img src="{{ patient.photo.url }}" alt="Photo of {{ patient.full_name }}" class="photo-box mb-2">
+        {% else %}
+          <div class="photo-box d-grid mx-auto mb-2 bg-light" style="place-items:center"><span class="display-5 text-secondary">{{ patient.full_name|initials }}</span></div>
+        {% endif %}
+      </div>
+      <ul class="list-group list-group-flush small">
+        <li class="list-group-item d-flex justify-content-between"><span class="text-muted">Age / Sex</span><span>{{ patient.age }} / {{ patient.get_gender_display }}</span></li>
+        <li class="list-group-item d-flex justify-content-between"><span class="text-muted">Mobile</span><span>{{ patient.phone }}</span></li>
+        {% if patient.email %}<li class="list-group-item d-flex justify-content-between"><span class="text-muted">Email</span><span>{{ patient.email }}</span></li>{% endif %}
+        <li class="list-group-item d-flex justify-content-between"><span class="text-muted">Occupation</span><span>{{ patient.occupation|default:"—" }}</span></li>
+        <li class="list-group-item d-flex justify-content-between"><span class="text-muted">Registered</span><span>{{ patient.registration_date|date:"d-M-Y" }}</span></li>
+        <li class="list-group-item"><span class="text-muted">Address</span><div>{{ patient.address|default:"—"|linebreaksbr }}</div></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold"><i class="bi bi-clock-history text-primary"></i> Visits</div>
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light"><tr><th>Date</th><th>Type</th><th>Doctor</th>{% if access.diagnosis.view %}<th>Diagnosis</th>{% endif %}{% if access.prescription.view %}<th>Prescription</th>{% endif %}</tr></thead>
+          <tbody>
+          {% for v in visits %}
+            <tr class="history-row" onclick="location.href='{% url 'visit_record' v.pk %}'">
+              <td class="text-nowrap">{{ v.visit_date|date:"d-M-Y" }}</td>
+              <td>{{ v.get_visit_type_display }}</td>
+              <td>{{ v.doctor|default:"—" }}</td>
+              {% if access.diagnosis.view %}<td>{{ v.diagnosis_summary|default:"—" }}</td>{% endif %}
+              {% if access.prescription.view %}<td class="small">{{ v.prescription_summary|default:"—" }}</td>{% endif %}
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="text-muted text-center py-3">No visits yet.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% if access.patient_images.view %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold"><i class="bi bi-images text-danger"></i> Before / after treatment images</div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-6">
+            <div class="small fw-semibold text-danger mb-2">Before treatment</div>
+            {% for img in images %}{% if img.stage == "BEFORE" %}
+              <a href="{{ img.image.url }}" target="_blank" title="{{ img.created_at|date:'d-M-Y' }} · {{ img.created_by|default:'' }}"><img src="{{ img.image.url }}" class="thumb me-1 mb-1" alt="Before treatment"></a>
+            {% endif %}{% endfor %}
+          </div>
+          <div class="col-md-6">
+            <div class="small fw-semibold text-success mb-2">After treatment</div>
+            {% for img in images %}{% if img.stage == "AFTER" %}
+              <a href="{{ img.image.url }}" target="_blank" title="{{ img.created_at|date:'d-M-Y' }} · {{ img.created_by|default:'' }}"><img src="{{ img.image.url }}" class="thumb me-1 mb-1" alt="After treatment"></a>
+            {% endif %}{% endfor %}
+          </div>
+        </div>
+        {% if not images %}<div class="text-muted small">No images uploaded.</div>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

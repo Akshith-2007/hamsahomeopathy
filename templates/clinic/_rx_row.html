@@ -1,0 +1,8 @@
+<tr data-row>
+  <td class="sn"></td>
+  <td>{% for h in form.hidden_fields %}{{ h }}{% endfor %}<span class="d-none">{{ form.DELETE }}</span>{{ form.non_field_errors }}{{ form.medicine_name }}{{ form.medicine_name.errors }}</td>
+  <td>{{ form.potency }}</td>
+  <td>{{ form.duration }}</td>
+  <td>{{ form.instructions }}</td>
+  {% if access.prescription.edit %}<td class="text-center"><button type="button" class="btn btn-link text-danger p-0" data-del-row title="Delete row"><i class="bi bi-trash"></i></button></td>{% endif %}
+</tr>

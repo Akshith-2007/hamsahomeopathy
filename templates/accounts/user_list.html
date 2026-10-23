@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h4 mb-0"><i class="bi bi-people"></i> Users &amp; roles</h1>
+  <a class="btn btn-success" href="{% url 'user_create' %}"><i class="bi bi-person-plus"></i> New user</a>
+</div>
+<form class="row g-2 mb-3" method="get">
+  <div class="col-sm-6 col-lg-4"><input class="form-control" name="q" value="{{ q }}" placeholder="Search name or username"></div>
+  <div class="col-sm-4 col-lg-3">
+    <select class="form-select" name="role"><option value="">All roles</option>
+      {% for value, label in roles %}<option value="{{ value }}" {% if request.GET.role == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="col-auto"><button class="btn btn-primary">Filter</button></div>
+</form>
+<div class="card border-0 shadow-sm"><div class="table-responsive">
+<table class="table align-middle mb-0">
+  <thead class="table-light"><tr><th>Username</th><th>Name</th><th>Role</th><th>Status</th><th>Last login</th><th class="text-end">Actions</th></tr></thead>
+  <tbody>
+  {% for u in page %}
+    <tr>
+      <td class="fw-semibold">{{ u.username }}</td>
+      <td>{{ u.get_full_name|default:"—" }}</td>
+      <td><span class="badge text-bg-light border">{{ u.get_role_display }}</span>{% if u.is_superuser %} <span class="badge text-bg-dark">superuser</span>{% endif %}</td>
+      <td>
+        {% if not u.is_active %}<span class="badge text-bg-secondary">Inactive</span>
+        {% elif u.is_locked %}<span class="badge text-bg-danger">Locked</span>
+        {% else %}<span class="badge text-bg-success">Active</span>{% endif %}
+        {% if u.failed_login_attempts %}<span class="small text-muted">{{ u.failed_login_attempts }} failed</span>{% endif %}
+      </td>
+      <td class="small">{{ u.last_login|date:"d-M-Y H:i"|default:"never" }}</td>
+      <td class="text-end text-nowrap">
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'user_edit' u.pk %}" title="Edit"><i class="bi bi-pencil"></i></a>
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'user_password' u.pk %}" title="Reset password"><i class="bi bi-key"></i></a>
+        {% if u != user %}
+        <form class="d-inline" method="post" action="{% url 'user_toggle_lock' u.pk %}">{% csrf_token %}
+          <button class="btn btn-sm btn-outline-{% if u.is_locked %}success{% else %}warning{% endif %}" title="{% if u.is_locked %}Unlock{% else %}Lock{% endif %}"><i class="bi bi-{% if u.is_locked %}unlock{% else %}lock{% endif %}"></i></button>
+        </form>
+        <form class="d-inline" method="post" action="{% url 'user_delete' u.pk %}" onsubmit="return confirm('Delete user {{ u.username }}? Their records stay attributed to them.');">{% csrf_token %}
+          <button class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% include "partials/pagination.html" %}
+{% endblock %}

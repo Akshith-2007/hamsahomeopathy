@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}New patient{% endblock %}
+{% block content %}
+<h1 class="h4 mb-3"><i class="bi bi-person-plus text-success"></i> Register new patient</h1>
+<form method="post" enctype="multipart/form-data" class="card border-0 shadow-sm">{% csrf_token %}
+  <div class="card-body">
+    {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+    <p class="text-muted small mb-3">The OPD number is generated automatically when you save.</p>
+    <div class="row g-4">
+      <div class="col-lg-8">
+        {% include "partials/field.html" with field=form.full_name label="Name" %}
+        <div class="row">
+          <div class="col-sm-6">{% include "partials/field.html" with field=form.age %}</div>
+          <div class="col-sm-6">{% include "partials/field.html" with field=form.gender %}</div>
+          <div class="col-sm-6">{% include "partials/field.html" with field=form.phone %}</div>
+          <div class="col-sm-6">{% include "partials/field.html" with field=form.email %}</div>
+          <div class="col-sm-6">{% include "partials/field.html" with field=form.occupation %}</div>
+          <div class="col-sm-6">{% include "partials/field.html" with field=form.registration_date %}</div>
+        </div>
+        {% include "partials/field.html" with field=form.address %}
+        <hr>
+        <div class="row">
+          <div class="col-sm-6">{% include "partials/field.html" with field=visit_form.visit_date label="Visit date" %}</div>
+          <div class="col-sm-6">{% include "partials/field.html" with field=visit_form.doctor label="Consulting doctor" %}</div>
+        </div>
+        <input type="hidden" name="visit-visit_type" value="NEW">
+      </div>
+      <div class="col-lg-4">
+        <label class="form-label fw-semibold"><i class="bi bi-camera"></i> Patient photo</label>
+        <label class="upload-zone d-block" data-upload>
+          <i class="bi bi-camera fs-2"></i>
+          <div>Click to upload patient photo</div>
+          <div class="hint">JPG, PNG (Max size: 5 MB)</div>
+          <div class="chosen"></div>
+          {{ form.photo }}
+        </label>
+        {{ form.photo.errors }}
+      </div>
+    </div>
+  </div>
+  <div class="card-footer bg-white text-end">
+    <a class="btn btn-outline-secondary" href="{% url 'home' %}">Cancel</a>
+    <button class="btn btn-success"><i class="bi bi-check2"></i> Register &amp; open case record</button>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}{% load static %}<script src="{% static 'js/case_record.js' %}"></script>{% endblock %}

@@ -1,0 +1,23 @@
+# Daily 08:00 (cluster time) SMS/WhatsApp reminders for tomorrow's follow-ups.
+# Harmless while SMS_ENABLED/WHATSAPP_ENABLED are "false".
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hamsa-followup-reminders
+  namespace: hamsa
+spec:
+  schedule: "0 8 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: reminders
+              image: hamsa-homeo:latest
+              imagePullPolicy: IfNotPresent
+              command: ["/app/docker/entrypoint.sh", "python", "manage.py", "send_followup_reminders"]
+              envFrom:
+                - configMapRef: { name: hamsa-config }
+                - secretRef: { name: hamsa-secrets }

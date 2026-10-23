@@ -1,0 +1,423 @@
+{% extends "base.html" %}{% load static clinic_tags %}
+{% block title %}Case record – {{ patient.full_name }}{% endblock %}
+{% block container %}container-fluid px-lg-4{% endblock %}
+{% block content %}
+{% with pf=forms.patient vf=forms.visit %}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2 no-print">
+  <a href="{% url 'patient_detail' patient.pk %}" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> {{ patient.full_name }}</a>
+  <div class="d-flex flex-wrap gap-2">
+    {% if access.prescription.view %}<a class="btn btn-sm btn-outline-success" href="{% url 'prescription_print' visit.pk %}" target="_blank"><i class="bi bi-printer"></i> Print prescription</a>{% endif %}
+    {% if can_add_visit %}
+    <form method="post" action="{% url 'visit_create' patient.pk %}">{% csrf_token %}
+      <button class="btn btn-sm btn-outline-primary"><i class="bi bi-calendar-plus"></i> New follow-up visit</button>
+    </form>
+    {% endif %}
+    {% if can_delete_visit %}
+    <form method="post" action="{% url 'visit_delete' visit.pk %}" onsubmit="return confirm('Delete this visit?');">{% csrf_token %}
+      <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i> Delete visit</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{# ------------------------------------------------------------ previous visits #}
+{% if history %}
+<div class="sec mb-3">
+  <button type="button" class="sec-head" data-bs-toggle="collapse" data-bs-target="#body-history" aria-expanded="true">
+    <i class="bi bi-clock-history"></i> Previous visit history <span class="badge rounded-pill text-bg-primary ms-1">{{ history|length }}</span>
+    <span class="small fw-normal text-muted ms-2">Click a row for full details</span>
+    <i class="bi bi-chevron-down chev"></i>
+  </button>
+  <div id="body-history" class="collapse show">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover grid-table mb-0">
+        <thead><tr><th>Visit date</th><th>Type</th><th>Doctor</th>{% if access.diagnosis.view %}<th>Diagnosis</th>{% endif %}{% if access.prescription.view %}<th>Prescription summary</th>{% endif %}</tr></thead>
+        <tbody>
+        {% for h in history %}
+          <tr class="history-row" data-summary-url="{% url 'visit_summary' h.pk %}" data-record-url="{% url 'visit_record' h.pk %}" tabindex="0">
+            <td class="text-nowrap">{{ h.visit_date|date:"d-M-Y" }}</td>
+            <td>{{ h.get_visit_type_display }}</td>
+            <td>{{ h.doctor|default:"—" }}</td>
+            {% if access.diagnosis.view %}<td>{{ h.diagnosis_summary|default:"—" }}</td>{% endif %}
+            {% if access.prescription.view %}<td>{{ h.prescription_summary|default:"—" }}</td>{% endif %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" id="case-record" novalidate>{% csrf_token %}
+
+<div class="record-header d-flex flex-wrap align-items-center gap-3">
+  <h1 class="h5 mb-0 me-auto"><i class="bi bi-clipboard2-pulse"></i> Homeopathic Case Record</h1>
+  <div class="d-flex align-items-center gap-2"><span class="small">OPD No.:</span><input class="form-control form-control-sm" value="{{ patient.opd_number }}" disabled></div>
+  <div class="d-flex align-items-center gap-2"><span class="small">Date:</span>{{ vf.visit_date }}</div>
+  <div class="d-flex align-items-center gap-2"><span class="small">Visit:</span>{{ vf.visit_type }}</div>
+  <div class="d-flex align-items-center gap-2"><span class="small">Doctor:</span>{{ vf.doctor }}</div>
+</div>
+{% if vf.errors %}<div class="alert alert-danger py-1 small mb-0">{{ vf.errors }}</div>{% endif %}
+<div class="bg-white border border-top-0 rounded-bottom p-2 mb-3 small text-muted">
+  {{ visit.get_visit_type_display }} · last updated {{ visit.updated_at|date:"d-M-Y H:i" }}{% if visit.updated_by %} by {{ visit.updated_by }}{% endif %}
+</div>
+
+{# ------------------------------------------------------------ patient details #}
+<div class="row g-3">
+  <div class="col-12">
+    {% include "partials/sec_head.html" with key="patient" title="Patient Details" icon="person-fill" acc=access.patient %}
+      <div class="row g-3">
+        <div class="col-lg-8">
+          {% include "partials/field.html" with field=pf.full_name label="Name" %}
+          <div class="row">
+            <div class="col-sm-4">{% include "partials/field.html" with field=pf.age %}</div>
+            <div class="col-sm-4">{% include "partials/field.html" with field=pf.gender %}</div>
+            <div class="col-sm-4">{% include "partials/field.html" with field=pf.registration_date label="Registered" %}</div>
+            <div class="col-sm-6">{% include "partials/field.html" with field=pf.phone %}</div>
+            <div class="col-sm-6">{% include "partials/field.html" with field=pf.occupation %}</div>
+            <div class="col-sm-6">{% include "partials/field.html" with field=pf.email %}</div>
+            <div class="col-sm-6">{% include "partials/field.html" with field=pf.address %}</div>
+          </div>
+        </div>
+        <div class="col-lg-4">
+          <div class="fw-semibold text-primary small mb-1"><i class="bi bi-camera-fill"></i> Patient Photo</div>
+          <div class="d-flex gap-2 align-items-start">
+            {% if patient.photo %}<img src="{{ patient.photo.url }}" class="thumb" alt="Patient photo">{% endif %}
+            {% if access.patient.edit %}
+            <label class="upload-zone flex-fill" data-upload>
+              <i class="bi bi-camera fs-4"></i>
+              <div class="fw-semibold">Click to upload patient photo</div>
+              <div class="hint">JPG, PNG (Max size: 5 MB)</div>
+              <div class="chosen"></div>
+              <input type="file" name="patient-photo" accept="image/jpeg,image/png">
+            </label>
+            {% elif not patient.photo %}<div class="text-muted small">No photo.</div>{% endif %}
+          </div>
+          {{ pf.photo.errors }}
+        </div>
+      </div>
+    </div></div></div>
+  </div>
+
+  {# ---------------------------------------------------------- case history #}
+  {% with f=forms.case_history %}
+  <div class="col-12">
+    {% include "partials/sec_head.html" with key="case_history" title="Case History" icon="journal-medical" acc=access.case_history %}
+      <label class="form-label fw-semibold small mb-1" for="{{ f.presenting_complaints.id_for_label }}">Presenting Complaints <span class="text-danger">*</span></label>
+      {{ f.presenting_complaints }}{{ f.presenting_complaints.errors }}
+      <div class="row g-3 mt-0">
+        <div class="col-md-6"><label class="form-label fw-semibold small mb-1">Past History</label>{{ f.past_history }}</div>
+        <div class="col-md-6"><label class="form-label fw-semibold small mb-1">Family History</label>{{ f.family_history }}</div>
+      </div>
+    </div></div></div>
+  </div>
+  {% endwith %}
+
+  {# ---------------------------------------------- physical / mental generals #}
+  {% with f=forms.physical_generals %}
+  <div class="{% if access.mental_generals.view %}col-xl-6{% else %}col-12{% endif %}">
+    {% include "partials/sec_head.html" with key="physical_generals" title="Physical Generals" icon="lungs-fill" acc=access.physical_generals %}
+      <div class="row">
+        {% for column in physical_layout %}
+        <div class="col-md-6">
+          {% for name, icon in column %}{% include "partials/field.html" with field=f|bound:name icon=icon %}{% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+    </div></div></div>
+  </div>
+  {% endwith %}
+
+  {% if access.mental_generals.view %}
+  {% with f=forms.mental_generals %}
+  <div class="col-xl-6">
+    {% include "partials/sec_head.html" with key="mental_generals" title="Mental Generals" icon="emoji-smile-fill" acc=access.mental_generals badge="Doctor only" %}
+      <div class="row">
+        {% for column in mental_layout %}
+        <div class="col-md-6">
+          {% for name, icon, bg, fg in column %}{% with field=f|bound:name %}
+          <div class="field-row mg-row">
+            <label for="{{ field.id_for_label }}"><span class="mg-chip" style="background:{{ bg }};color:{{ fg }}"><i class="bi bi-{{ icon }}"></i></span>{{ field.label }}</label>
+            <div class="field">{{ field }}{{ field.errors }}</div>
+          </div>
+          {% endwith %}{% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+    </div></div></div>
+  </div>
+  {% endwith %}
+  {% endif %}
+
+  {# ----------------------------------------------- examination / diagnosis #}
+  {% with f=forms.examination %}
+  <div class="{% if access.diagnosis.view %}col-lg-6{% else %}col-12{% endif %}">
+    {% include "partials/sec_head.html" with key="examination" title="Physical Examination" icon="heart-pulse-fill" acc=access.examination %}
+      <div class="row">
+        <div class="col-sm-6">
+          {% include "partials/field.html" with field=f.pulse label="Pulse" %}
+          {% include "partials/field.html" with field=f.blood_pressure label="BP" %}
+          {% include "partials/field.html" with field=f.weight label="Wt. (kg)" %}
+        </div>
+        <div class="col-sm-6">
+          {% include "partials/field.html" with field=f.temperature label="Temp. (°F)" %}
+          {% include "partials/field.html" with field=f.respiratory_rate label="RR" %}
+          <div class="field-row"><label>Pallor</label>
+            <div class="field d-flex gap-3">{% for radio in f.pallor %}<div class="form-check">{{ radio.tag }}<label class="form-check-label" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label></div>{% endfor %}</div>
+          </div>
+        </div>
+      </div>
+      {{ f.non_field_errors }}
+    </div></div></div>
+  </div>
+  {% endwith %}
+
+  {% if access.diagnosis.view %}
+  {% with f=forms.diagnosis %}
+  <div class="col-lg-6">
+    {% include "partials/sec_head.html" with key="diagnosis" title="Diagnosis" icon="folder-fill" acc=access.diagnosis %}
+      {% include "partials/field.html" with field=f.provisional label="Provisional Diagnosis" %}
+      {% include "partials/field.html" with field=f.differential label="Differential Diagnosis" %}
+      {% include "partials/field.html" with field=f.final label="Final Diagnosis" %}
+    </div></div></div>
+  </div>
+  {% endwith %}
+  {% endif %}
+
+  {# ---------------------------------------------------------- investigations #}
+  {% with f=forms.investigations %}
+  <div class="col-12">
+    {% include "partials/sec_head.html" with key="investigations" title="Investigations" icon="eyedropper" acc=access.investigation_reports badge=investigation.get_status_display %}
+      <div class="row g-3">
+        <div class="col-lg-6">
+          <label class="form-label fw-semibold small mb-1">Investigations</label>
+          {{ f.request_notes }}{{ f.request_notes.errors }}
+          <div class="row mt-1">
+            <div class="col-sm-6">{% include "partials/field.html" with field=f.requested_date label="Requested on" %}</div>
+            <div class="col-sm-6">{% include "partials/field.html" with field=f.status %}</div>
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <label class="form-label fw-semibold small mb-1">Upload Reports</label>
+          {% if access.investigation_reports.edit %}
+            {% include "partials/upload_zone.html" with name="investigation_files" multiple=True accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" hint="PDF, DOC, DOCX, JPG, PNG (Max size: 20 MB each)" errors=record.upload_errors|get_item:"investigation_files" %}
+          {% endif %}
+          <div class="mt-2">
+            {% for r in investigation.reports.all %}{% include "partials/file_chip.html" with f=r kind="report" can_remove=access.investigation_reports.delete %}{% empty %}<span class="text-muted small">No reports uploaded.</span>{% endfor %}
+          </div>
+        </div>
+      </div>
+    </div></div></div>
+  </div>
+  {% endwith %}
+
+  {# ---------------------------------------------------------- past treatment #}
+  {% with f=forms.past_treatment %}
+  <div class="col-12">
+    {% include "partials/sec_head.html" with key="past_treatment" title="Past Treatment" icon="capsule-pill" acc=access.past_treatment %}
+      <div class="row g-3">
+        <div class="col-lg-6">
+          <label class="form-label fw-semibold small mb-1">Past Treatment</label>
+          {{ f.previous_medication }}
+          <div class="row mt-1">
+            <div class="col-sm-6">{% include "partials/field.html" with field=f.duration %}</div>
+            <div class="col-sm-6">{% include "partials/field.html" with field=f.outcome %}</div>
+          </div>
+          {% include "partials/field.html" with field=f.notes %}
+        </div>
+        <div class="col-lg-6">
+          <label class="form-label fw-semibold small mb-1">Upload Records</label>
+          {% if access.past_treatment.edit %}
+            {% include "partials/upload_zone.html" with name="past_treatment_files" multiple=True accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" hint="PDF, JPG, PNG, DOC (Max size: 20 MB each)" errors=record.upload_errors|get_item:"past_treatment_files" %}
+          {% endif %}
+          <div class="mt-2">
+            {% if past_treatment %}{% for a in past_treatment.attachments.all %}{% include "partials/file_chip.html" with f=a kind="past-treatment" can_remove=access.past_treatment.delete %}{% endfor %}{% endif %}
+          </div>
+        </div>
+      </div>
+    </div></div></div>
+  </div>
+  {% endwith %}
+
+  {# ------------------------------------------------------------ patient images #}
+  {% if access.patient_images.view %}
+  <div class="col-12">
+    {% include "partials/sec_head.html" with key="patient_images" title="Patient Images (Before & After Treatment)" icon="camera-fill" acc=access.patient_images head_class="sec-images-head" %}
+      <div class="row g-3">
+        {% for stage, label, input_name, color in image_stages %}
+        <div class="col-lg-6">
+          <div class="fw-semibold small mb-2 text-{{ color }}"><i class="bi bi-camera"></i> {{ label }}</div>
+          <div class="row g-2 align-items-start">
+            {% if access.patient_images.edit %}
+            <div class="col-sm-6">
+              {% include "partials/upload_zone.html" with name=input_name multiple=True accept="image/jpeg,image/png" hint="JPG, PNG (Max size: 5 MB)" errors=record.upload_errors|get_item:input_name %}
+            </div>
+            {% endif %}
+            <div class="col">
+              {% for img in images %}{% if img.stage == stage %}
+              <span class="thumb-wrap me-1 mb-1">
+                <a href="{{ img.image.url }}" target="_blank" title="{{ img.created_at|date:'d-M-Y' }}{% if img.created_by %} · {{ img.created_by }}{% endif %}"><img src="{{ img.image.url }}" class="thumb" alt="{{ label }}"></a>
+                {% if access.patient_images.delete %}<button type="button" class="btn btn-danger btn-sm thumb-del" data-delete-url="{% url 'upload_delete' 'image' img.pk %}" title="Remove"><i class="bi bi-x"></i></button>{% endif %}
+              </span>
+              {% endif %}{% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div></div></div>
+  </div>
+  {% endif %}
+
+  {# ----------------------------------------------------------- repertory #}
+  {% if access.repertory.view %}
+  {% with f=forms.repertory fs=formsets.repertory %}
+  <div class="col-12">
+    {% include "partials/sec_head.html" with key="repertory" title="Repertory Analysis" icon="book-half" acc=access.repertory %}
+      <div class="row g-3">
+        <div class="col-xl-7">
+          <div class="fw-semibold small mb-1">Symptoms / Rubrics Used</div>
+          {{ fs.management_form }}{{ fs.non_form_errors }}
+          <div class="table-responsive">
+            <table class="table table-sm grid-table mb-1" data-formset="rep" id="rep-table">
+              <thead><tr><th class="sn">S.No.</th><th>Symptom</th><th>Rubric</th><th>Book</th><th style="width:5rem">Grade</th><th>Remedies <span class="fw-normal text-muted">(remedy:grade)</span></th>{% if access.repertory.edit %}<th></th>{% endif %}</tr></thead>
+              <tbody>
+                {% for form in fs %}{% include "clinic/_rep_row.html" %}{% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% if access.repertory.edit %}
+          <template id="rep-empty">{% with form=fs.empty_form %}{% include "clinic/_rep_row.html" %}{% endwith %}</template>
+          <button type="button" class="btn btn-sm btn-outline-primary" data-add-row="rep"><i class="bi bi-plus-lg"></i> Add Symptom / Rubric</button>
+          {% endif %}
+          <div class="mt-3">
+            <label class="form-label fw-semibold small mb-1">Repertory Notes / Analysis</label>
+            {{ f.notes }}
+          </div>
+        </div>
+        <div class="col-xl-5">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <span class="fw-semibold small me-auto">Repertorization Chart</span>
+            <select class="form-select form-select-sm w-auto" id="rep-sort">
+              <option value="total">Sort: Total score</option>
+              <option value="count">Sort: Rubrics covered</option>
+            </select>
+            <button type="button" class="btn btn-sm btn-success" id="rep-generate"><i class="bi bi-bar-chart-fill"></i> Generate Chart</button>
+          </div>
+          <div class="table-responsive border rounded"><table class="table table-sm table-bordered rep-chart mb-0" id="rep-chart"><tbody><tr><td class="text-muted small p-3">Enter rubrics with remedies (e.g. <code>Nux-v:3, Sulph:2</code>) and click Generate Chart.</td></tr></tbody></table></div>
+          <div class="row g-2 mt-2">
+            <div class="col-sm-7">
+              <div class="fw-semibold small mb-1">Upload Repertorization Sheet (Image/PDF)</div>
+              {% if access.repertory.edit %}
+              <label class="upload-zone d-block" data-upload>
+                <i class="bi bi-cloud-arrow-up-fill fs-4 text-secondary"></i>
+                <div class="fw-semibold small">Drop file here or click to upload</div>
+                <div class="hint">PDF, JPG, PNG (Max size: 10 MB)</div>
+                <div class="chosen"></div>
+                <input type="file" name="repertory-sheet" accept=".pdf,image/jpeg,image/png">
+              </label>
+              {{ f.sheet.errors }}
+              {% endif %}
+            </div>
+            <div class="col-sm-5">
+              <div class="fw-semibold small mb-1">Preview</div>
+              {% if repertory.sheet %}
+                {% if repertory.is_image %}<a href="{{ repertory.sheet.url }}" target="_blank"><img src="{{ repertory.sheet.url }}" class="img-fluid rounded border" alt="Repertorization sheet"></a>
+                {% else %}<a class="btn btn-sm btn-outline-danger w-100" href="{{ repertory.sheet.url }}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> Open PDF</a>{% endif %}
+                {% if access.repertory.delete %}<button type="button" class="btn btn-link btn-sm text-danger p-0 mt-1" data-delete-url="{% url 'repertory_sheet_delete' repertory.pk %}">Remove sheet</button>{% endif %}
+              {% else %}<div class="border rounded bg-light text-center text-muted small py-4"><i class="bi bi-image fs-3 d-block"></i>No image uploaded</div>{% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div></div>
+  </div>
+  {% endwith %}
+  {% endif %}
+
+  {# ----------------------------------------------------------- prescription #}
+  {% if access.prescription.view %}
+  {% with f=forms.prescription fs=formsets.prescription %}
+  <div class="col-12">
+    {% include "partials/sec_head.html" with key="prescription" title="Prescription" icon="prescription2" acc=access.prescription badge="Doctor only" %}
+      {{ fs.management_form }}{{ fs.non_form_errors }}
+      <div class="table-responsive">
+        <table class="table table-sm grid-table mb-1" data-formset="rx" id="rx-table">
+          <thead><tr><th class="sn">S.No.</th><th>Medicine</th><th style="width:11rem">Potency</th><th style="width:12rem">Duration</th><th>Instructions</th>{% if access.prescription.edit %}<th></th>{% endif %}</tr></thead>
+          <tbody>{% for form in fs %}{% include "clinic/_rx_row.html" %}{% endfor %}</tbody>
+        </table>
+      </div>
+      {% if access.prescription.edit %}
+      <template id="rx-empty">{% with form=fs.empty_form %}{% include "clinic/_rx_row.html" %}{% endwith %}</template>
+      <button type="button" class="btn btn-sm btn-outline-primary" data-add-row="rx"><i class="bi bi-plus-lg"></i> Add medicine</button>
+      <datalist id="medicine-list">{% for name in medicine_suggestions %}<option value="{{ name }}">{% endfor %}</datalist>
+      {% endif %}
+      <div class="row g-3 mt-1">
+        <div class="col-md-6"><label class="form-label fw-semibold small mb-1">Dietary Advice</label>{{ f.dietary_advice }}</div>
+        <div class="col-md-6"><label class="form-label fw-semibold small mb-1">Follow Up Advice</label>{{ f.followup_advice }}</div>
+      </div>
+    </div></div></div>
+  </div>
+  {% endwith %}
+  {% endif %}
+
+  {# ---------------------------------------------------------- follow-up #}
+  {% if access.followups.view %}
+  {% with fs=formsets.followups %}
+  <div class="col-12">
+    {% include "partials/sec_head.html" with key="followups" title="Follow Up History" icon="calendar-week-fill" acc=access.followups %}
+      {% if patient_followups %}
+      <div class="small fw-semibold text-muted mb-1">Earlier visits</div>
+      <table class="table table-sm grid-table mb-3">
+        <thead><tr><th>Date</th><th>Description / Progress</th><th>Medicine</th><th>Next Follow Up</th></tr></thead>
+        <tbody>{% for fu in patient_followups %}<tr><td>{{ fu.visit_date|date:"d-M-Y" }}</td><td>{{ fu.progress_notes }}</td><td>{{ fu.medicines_given }}</td><td>{{ fu.next_followup_date|date:"d-M-Y"|default:"—" }}</td></tr>{% endfor %}</tbody>
+      </table>
+      <div class="small fw-semibold text-muted mb-1">This visit</div>
+      {% endif %}
+      {{ fs.management_form }}{{ fs.non_form_errors }}
+      <div class="table-responsive">
+        <table class="table table-sm grid-table mb-1" data-formset="fu" id="fu-table">
+          <thead><tr><th class="sn">S.No.</th><th style="width:10rem">Date</th><th>Description / Progress</th><th>Medicine</th><th style="width:10rem">Next Follow Up</th>{% if access.followups.edit %}<th></th>{% endif %}</tr></thead>
+          <tbody>{% for form in fs %}{% include "clinic/_fu_row.html" %}{% endfor %}</tbody>
+        </table>
+      </div>
+      {% if access.followups.edit %}
+      <template id="fu-empty">{% with form=fs.empty_form %}{% include "clinic/_fu_row.html" %}{% endwith %}</template>
+      <button type="button" class="btn btn-sm btn-outline-primary" data-add-row="fu"><i class="bi bi-plus-lg"></i> Add follow-up</button>
+      {% endif %}
+    </div></div></div>
+  </div>
+  {% endwith %}
+  {% endif %}
+</div>
+
+{% if can_edit_any %}
+<div class="sticky-save py-2 mt-2 no-print">
+  <div class="d-flex justify-content-between align-items-center">
+    <div class="btn-group btn-group-sm">
+      <button type="button" class="btn btn-outline-secondary" data-expand-all><i class="bi bi-arrows-expand"></i> Expand all</button>
+      <button type="button" class="btn btn-outline-secondary" data-collapse-all><i class="bi bi-arrows-collapse"></i> Collapse all</button>
+    </div>
+    <button class="btn btn-success px-4"><i class="bi bi-save"></i> Save case record</button>
+  </div>
+</div>
+{% endif %}
+</form>
+{% endwith %}
+
+<div class="modal fade" id="visitModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-clock-history"></i> Visit details</h5>
+        <a class="btn btn-sm btn-outline-primary ms-auto me-2" id="visitModalOpen" href="#">Open full record</a>
+        <button type="button" class="btn-close ms-0" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="visitModalBody"><div class="text-center py-5"><div class="spinner-border text-primary"></div></div></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'js/case_record.js' %}"></script>{% endblock %}

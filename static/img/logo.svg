@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 96" role="img" aria-label="Hamsa Homeopathy">
+  <defs>
+    <linearGradient id="leaf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8bc34a"/>
+      <stop offset="1" stop-color="#2e7d32"/>
+    </linearGradient>
+    <linearGradient id="petal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f48fb1"/>
+      <stop offset="1" stop-color="#f8bbd0"/>
+    </linearGradient>
+  </defs>
+  <!-- outer leaves -->
+  <path d="M60 88 C30 86 8 66 4 40 C26 46 44 60 60 88Z" fill="url(#leaf)"/>
+  <path d="M60 88 C90 86 112 66 116 40 C94 46 76 60 60 88Z" fill="url(#leaf)"/>
+  <path d="M60 88 C40 78 24 54 26 26 C44 38 56 60 60 88Z" fill="#7cb342"/>
+  <path d="M60 88 C80 78 96 54 94 26 C76 38 64 60 60 88Z" fill="#7cb342"/>
+  <!-- lotus petal -->
+  <path d="M60 4 C74 22 76 46 60 70 C44 46 46 22 60 4Z" fill="url(#petal)"/>
+  <!-- figure -->
+  <circle cx="60" cy="40" r="6" fill="#1b5e20"/>
+  <path d="M60 48 C52 48 44 54 40 60 C48 58 54 58 56 62 L56 80 L64 80 L64 62 C66 58 72 58 80 60 C76 54 68 48 60 48Z" fill="#1b5e20"/>
+</svg>

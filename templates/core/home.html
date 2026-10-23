@@ -1,0 +1,132 @@
+{% extends "base.html" %}{% load static %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="hero-banner d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <div class="text-muted small">{% now "l, d F Y" %}</div>
+    <h1 class="h4 mb-0">Welcome, {{ user.display_name }}</h1>
+  </div>
+  <img src="{% static 'img/logo.svg' %}" alt="" style="height:56px" class="d-none d-sm-block">
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-12">
+    <a class="tile tile-blue" href="#dashboard-widgets">
+      <span class="tile-icon"><i class="bi bi-house-door-fill"></i></span>
+      <span class="tile-label">Dashboard</span>
+      <span class="tile-go"><i class="bi bi-chevron-right"></i></span>
+    </a>
+  </div>
+  {% if can_register %}
+  <div class="col-md-6">
+    <a class="tile tile-green" href="{% url 'patient_create' %}">
+      <span class="tile-icon"><i class="bi bi-person-fill-add"></i></span>
+      <span class="tile-label">New patient</span>
+      <span class="tile-go"><i class="bi bi-chevron-right"></i></span>
+    </a>
+  </div>
+  <div class="col-md-6">
+    <a class="tile tile-purple" href="{% url 'patient_list' %}?mode=followup">
+      <span class="tile-icon"><i class="bi bi-calendar-plus-fill"></i></span>
+      <span class="tile-label">Add Follow-up</span>
+      <span class="tile-go"><i class="bi bi-chevron-right"></i></span>
+    </a>
+  </div>
+  {% endif %}
+  <div class="col-md-6">
+    <a class="tile tile-orange" href="{% url 'patient_list' %}">
+      <span class="tile-icon"><i class="bi bi-search"></i></span>
+      <span class="tile-label">Find Patient</span>
+      <span class="tile-go"><i class="bi bi-chevron-right"></i></span>
+    </a>
+  </div>
+  {% if is_clinical %}
+  <div class="col-md-6">
+    <a class="tile tile-pink" href="{% url 'reports' %}">
+      <span class="tile-icon"><i class="bi bi-bar-chart-fill"></i></span>
+      <span class="tile-label">Reports</span>
+      <span class="tile-go"><i class="bi bi-chevron-right"></i></span>
+    </a>
+  </div>
+  {% endif %}
+</div>
+
+<div id="dashboard-widgets">
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3"><div class="stat-card"><div class="text-muted small">Registered patients</div><div class="stat-value">{{ stats.patients }}</div></div></div>
+    <div class="col-6 col-lg-3"><div class="stat-card"><div class="text-muted small">Today's visits</div><div class="stat-value text-primary">{{ stats.today }}</div></div></div>
+    <div class="col-6 col-lg-3"><div class="stat-card"><div class="text-muted small">Pending lab reports</div><div class="stat-value text-warning">{{ stats.pending_labs }}</div></div></div>
+    {% if stats.followups is not None %}
+    <div class="col-6 col-lg-3"><div class="stat-card"><div class="text-muted small">Follow-ups (next 7 days)</div><div class="stat-value text-success">{{ stats.followups }}</div></div></div>
+    {% endif %}
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="card widget h-100">
+        <div class="card-header"><i class="bi bi-calendar-day text-primary"></i> Today's patients</div>
+        <div class="list-group list-group-flush">
+          {% for v in today_visits %}
+          <a class="list-group-item list-group-item-action d-flex justify-content-between" href="{% url 'visit_record' v.pk %}">
+            <span><strong>{{ v.patient.full_name }}</strong> <span class="text-muted small">{{ v.patient.opd_number }}</span></span>
+            <span class="small text-muted">{{ v.get_visit_type_display }}{% if v.doctor %} · {{ v.doctor }}{% endif %}</span>
+          </a>
+          {% empty %}<div class="list-group-item text-muted small">No visits recorded today.</div>{% endfor %}
+        </div>
+      </div>
+    </div>
+
+    {% if upcoming_followups is not None %}
+    <div class="col-lg-6">
+      <div class="card widget h-100">
+        <div class="card-header"><i class="bi bi-calendar-check text-success"></i> Upcoming follow-ups</div>
+        <div class="list-group list-group-flush">
+          {% for f in upcoming_followups %}
+          <a class="list-group-item list-group-item-action d-flex justify-content-between" href="{% url 'patient_detail' f.visit.patient_id %}">
+            <span><strong>{{ f.visit.patient.full_name }}</strong> <span class="text-muted small">{{ f.visit.patient.phone }}</span></span>
+            <span class="badge text-bg-light border">{{ f.next_followup_date|date:"d M" }}</span>
+          </a>
+          {% empty %}<div class="list-group-item text-muted small">No follow-ups due in the next 7 days.</div>{% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="col-lg-6">
+      <div class="card widget h-100">
+        <div class="card-header"><i class="bi bi-hourglass-split text-warning"></i> Pending lab reports</div>
+        <div class="list-group list-group-flush">
+          {% for inv in pending_investigations %}
+          <a class="list-group-item list-group-item-action" href="{% url 'visit_record' inv.visit_id %}#sec-investigations">
+            <div class="d-flex justify-content-between">
+              <strong>{{ inv.visit.patient.full_name }}</strong>
+              <span class="small text-muted">requested {{ inv.requested_date|date:"d M" }}</span>
+            </div>
+            <div class="small text-muted text-truncate">{{ inv.request_notes|default:"—" }}</div>
+          </a>
+          {% empty %}<div class="list-group-item text-muted small">No pending investigations.</div>{% endfor %}
+        </div>
+      </div>
+    </div>
+
+    {% if recent_prescriptions is not None %}
+    <div class="col-lg-6">
+      <div class="card widget h-100">
+        <div class="card-header"><i class="bi bi-capsule text-danger"></i> Recent prescriptions</div>
+        <div class="list-group list-group-flush">
+          {% for rx in recent_prescriptions %}
+          <a class="list-group-item list-group-item-action" href="{% url 'visit_record' rx.visit_id %}#sec-prescription">
+            <div class="d-flex justify-content-between">
+              <strong>{{ rx.visit.patient.full_name }}</strong>
+              <span class="small text-muted">{{ rx.prescribed_on|date:"d M Y" }}</span>
+            </div>
+            <div class="small text-muted text-truncate">{% for i in rx.items.all %}{{ i.medicine_name }} {{ i.potency }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</div>
+          </a>
+          {% empty %}<div class="list-group-item text-muted small">No prescriptions yet.</div>{% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

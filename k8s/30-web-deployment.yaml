@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hamsa-web
+  namespace: hamsa
+  labels: { app: hamsa-web }
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # the media volume is ReadWriteOnce
+  selector:
+    matchLabels: { app: hamsa-web }
+  template:
+    metadata:
+      labels: { app: hamsa-web }
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      initContainers:
+        - name: migrate
+          image: hamsa-homeo:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/app/docker/entrypoint.sh", "python", "manage.py", "migrate", "--noinput"]
+          envFrom:
+            - configMapRef: { name: hamsa-config }
+            - secretRef: { name: hamsa-secrets }
+      containers:
+        - name: web
+          image: hamsa-homeo:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 5000
+          envFrom:
+            - configMapRef: { name: hamsa-config }
+            - secretRef: { name: hamsa-secrets }
+          volumeMounts:
+            - name: media
+              mountPath: /app/media
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 768Mi }
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: hamsa-media

@@ -1,0 +1,8 @@
+<label class="upload-zone d-block" data-upload>
+  <i class="bi bi-{{ icon|default:'cloud-arrow-up-fill' }} fs-3 text-secondary"></i>
+  <div class="fw-semibold">{{ label|default:"Drop files here or click to upload" }}</div>
+  <div class="hint">{{ hint }}</div>
+  <div class="chosen"></div>
+  <input type="file" name="{{ name }}" accept="{{ accept }}"{% if multiple %} multiple{% endif %}>
+</label>
+{% for err in errors %}<div class="text-danger small mt-1">{{ err }}</div>{% endfor %}

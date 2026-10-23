@@ -1,0 +1,9 @@
+<div class="sec{% if not acc.edit %} sec-readonly{% endif %}" id="sec-{{ key }}">
+  <button type="button" class="sec-head{% if key not in open_sections %} collapsed{% endif %}{% if head_class %} {{ head_class }}{% endif %}"
+          data-bs-toggle="collapse" data-bs-target="#body-{{ key }}" aria-controls="body-{{ key }}"
+          aria-expanded="{% if key in open_sections %}true{% else %}false{% endif %}">
+    <i class="bi bi-{{ icon }}"></i> {{ title }}{% if badge %} <span class="badge rounded-pill text-bg-light border ms-1">{{ badge }}</span>{% endif %}
+    <i class="bi bi-chevron-down chev"></i>
+  </button>
+  <div id="body-{{ key }}" class="collapse{% if key in open_sections %} show{% endif %}">
+    <div class="sec-body">

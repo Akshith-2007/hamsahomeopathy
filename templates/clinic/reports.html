@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
+  <h1 class="h4 mb-0"><i class="bi bi-bar-chart text-danger"></i> Reports</h1>
+  <form class="d-flex flex-wrap gap-2 align-items-end" method="get">
+    <div><label class="form-label small mb-0">From</label><input type="date" class="form-control form-control-sm" name="start" value="{{ start|date:'Y-m-d' }}"></div>
+    <div><label class="form-label small mb-0">To</label><input type="date" class="form-control form-control-sm" name="end" value="{{ end|date:'Y-m-d' }}"></div>
+    <button class="btn btn-sm btn-primary">Apply</button>
+    <button class="btn btn-sm btn-outline-success" name="export" value="csv"><i class="bi bi-download"></i> Export visits (CSV)</button>
+  </form>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg"><div class="stat-card"><div class="text-muted small">Visits</div><div class="stat-value">{{ totals.visits }}</div></div></div>
+  <div class="col-6 col-lg"><div class="stat-card"><div class="text-muted small">New cases</div><div class="stat-value text-success">{{ totals.new_cases }}</div></div></div>
+  <div class="col-6 col-lg"><div class="stat-card"><div class="text-muted small">Follow-up visits</div><div class="stat-value text-primary">{{ totals.follow_ups }}</div></div></div>
+  <div class="col-6 col-lg"><div class="stat-card"><div class="text-muted small">New registrations</div><div class="stat-value">{{ totals.new_patients }}</div></div></div>
+  <div class="col-6 col-lg"><div class="stat-card"><div class="text-muted small">Investigations pending</div><div class="stat-value text-warning">{{ totals.pending_investigations }}</div></div></div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card widget h-100"><div class="card-header">Top diagnoses (final)</div>
+      <table class="table table-sm mb-0"><tbody>
+        {% for d in diagnoses %}<tr><td>{{ d.final }}</td><td class="text-end fw-semibold">{{ d.total }}</td></tr>
+        {% empty %}<tr><td class="text-muted">No data for this period.</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card widget h-100"><div class="card-header">Most prescribed medicines</div>
+      <table class="table table-sm mb-0"><tbody>
+        {% for med in medicines %}<tr><td>{{ med.medicine_name }}</td><td class="text-end fw-semibold">{{ med.total }}</td></tr>
+        {% empty %}<tr><td class="text-muted">No data for this period.</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card widget h-100"><div class="card-header">Visits by doctor</div>
+      <table class="table table-sm mb-0"><tbody>
+        {% for row in by_doctor %}<tr><td>{% if row.doctor__username %}Dr. {{ row.doctor__first_name }} {{ row.doctor__last_name }}{% else %}<span class="text-muted">Unassigned</span>{% endif %}</td><td class="text-end fw-semibold">{{ row.total }}</td></tr>
+        {% empty %}<tr><td class="text-muted">No data for this period.</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card widget h-100"><div class="card-header">New registrations by sex</div>
+      <table class="table table-sm mb-0"><tbody>
+        {% for label, total in gender %}<tr><td>{{ label }}</td><td class="text-end fw-semibold">{{ total }}</td></tr>
+        {% empty %}<tr><td class="text-muted">No data for this period.</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </div>
+</div>
+{% endblock %}

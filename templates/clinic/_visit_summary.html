@@ -1,0 +1,145 @@
+<div class="d-flex flex-wrap gap-3 mb-3 small">
+  <span><strong>Date:</strong> {{ visit.visit_date|date:"d-M-Y" }}</span>
+  <span><strong>Type:</strong> {{ visit.get_visit_type_display }}</span>
+  <span><strong>Doctor:</strong> {{ visit.doctor|default:"—" }}</span>
+  <span><strong>Patient:</strong> {{ visit.patient.full_name }} ({{ visit.patient.opd_number }})</span>
+</div>
+
+<div class="accordion" id="summaryAcc">
+  <div class="accordion-item">
+    <h2 class="accordion-header"><button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#s-ch">Case History</button></h2>
+    <div id="s-ch" class="accordion-collapse collapse show"><div class="accordion-body small">
+      {% if case_history %}
+        <dl class="row mb-0">
+          <dt class="col-sm-3">Presenting complaints</dt><dd class="col-sm-9">{{ case_history.presenting_complaints|linebreaksbr|default:"—" }}</dd>
+          <dt class="col-sm-3">Past history</dt><dd class="col-sm-9">{{ case_history.past_history|linebreaksbr|default:"—" }}</dd>
+          <dt class="col-sm-3">Family history</dt><dd class="col-sm-9">{{ case_history.family_history|linebreaksbr|default:"—" }}</dd>
+        </dl>
+      {% else %}<span class="text-muted">Not recorded.</span>{% endif %}
+    </div></div>
+  </div>
+
+  <div class="accordion-item">
+    <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#s-pg">Physical Generals &amp; Examination</button></h2>
+    <div id="s-pg" class="accordion-collapse collapse"><div class="accordion-body small">
+      <div class="row">
+        <div class="col-md-7">
+          {% if physical %}
+          <dl class="row mb-0">
+            <dt class="col-5">Sleep</dt><dd class="col-7">{{ physical.sleep|default:"—" }}</dd>
+            <dt class="col-5">Dreams</dt><dd class="col-7">{{ physical.dreams|default:"—" }}</dd>
+            <dt class="col-5">Thirst</dt><dd class="col-7">{{ physical.thirst|default:"—" }}</dd>
+            <dt class="col-5">Appetite</dt><dd class="col-7">{{ physical.appetite|default:"—" }}</dd>
+            <dt class="col-5">Desires</dt><dd class="col-7">{{ physical.desires|default:"—" }}</dd>
+            <dt class="col-5">Aversions</dt><dd class="col-7">{{ physical.aversions|default:"—" }}</dd>
+            <dt class="col-5">Urine</dt><dd class="col-7">{{ physical.urine|default:"—" }}</dd>
+            <dt class="col-5">Stool</dt><dd class="col-7">{{ physical.stool|default:"—" }}</dd>
+            <dt class="col-5">Sweat</dt><dd class="col-7">{{ physical.sweat|default:"—" }}</dd>
+            <dt class="col-5">Thermals</dt><dd class="col-7">{{ physical.get_thermals_display|default:"—" }}</dd>
+            <dt class="col-5">Menses</dt><dd class="col-7">{{ physical.menses|default:"—" }}</dd>
+            <dt class="col-5">Obstetric</dt><dd class="col-7">{{ physical.obstetric_history|default:"—" }}</dd>
+            <dt class="col-5">Constitution</dt><dd class="col-7">{{ physical.constitution|default:"—" }}</dd>
+            <dt class="col-5">Habits</dt><dd class="col-7">{{ physical.habits|default:"—" }}</dd>
+          </dl>
+          {% else %}<span class="text-muted">Physical generals not recorded.</span>{% endif %}
+        </div>
+        <div class="col-md-5">
+          {% if examination %}
+          <dl class="row mb-0">
+            <dt class="col-6">Pulse</dt><dd class="col-6">{{ examination.pulse|default:"—" }}</dd>
+            <dt class="col-6">BP</dt><dd class="col-6">{{ examination.blood_pressure|default:"—" }}</dd>
+            <dt class="col-6">Weight</dt><dd class="col-6">{{ examination.weight|default:"—" }}</dd>
+            <dt class="col-6">Temp.</dt><dd class="col-6">{{ examination.temperature|default:"—" }}</dd>
+            <dt class="col-6">RR</dt><dd class="col-6">{{ examination.respiratory_rate|default:"—" }}</dd>
+            <dt class="col-6">Pallor</dt><dd class="col-6">{{ examination.get_pallor_display|default:"—" }}</dd>
+          </dl>
+          {% else %}<span class="text-muted">Examination not recorded.</span>{% endif %}
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  {% if access.mental_generals.view %}
+  <div class="accordion-item">
+    <h2 class="accordion-header"><button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#s-mg">Mental Generals</button></h2>
+    <div id="s-mg" class="accordion-collapse collapse show"><div class="accordion-body small">
+      {% if mental %}
+      <dl class="row mb-0">
+        <dt class="col-sm-3">Disposition / Temperament</dt><dd class="col-sm-9">{{ mental.disposition|default:"—" }}</dd>
+        <dt class="col-sm-3">Company / Social</dt><dd class="col-sm-9">{{ mental.company_social|default:"—" }}</dd>
+        <dt class="col-sm-3">Emotions</dt><dd class="col-sm-9">{{ mental.emotions|default:"—" }}</dd>
+        <dt class="col-sm-3">Relationships</dt><dd class="col-sm-9">{{ mental.relationships|default:"—" }}</dd>
+        <dt class="col-sm-3">Ailments from / Triggers</dt><dd class="col-sm-9">{{ mental.triggers|default:"—" }}</dd>
+        <dt class="col-sm-3">Confidence / Self-esteem</dt><dd class="col-sm-9">{{ mental.confidence|default:"—" }}</dd>
+        <dt class="col-sm-3">Fears</dt><dd class="col-sm-9">{{ mental.fears|default:"—" }}</dd>
+        <dt class="col-sm-3">Responsibility / Work</dt><dd class="col-sm-9">{{ mental.responsibility_work|default:"—" }}</dd>
+        <dt class="col-sm-3">Anxiety / Worries</dt><dd class="col-sm-9">{{ mental.anxiety|default:"—" }}</dd>
+        <dt class="col-sm-3">Concentration / Memory</dt><dd class="col-sm-9">{{ mental.concentration|default:"—" }}</dd>
+        <dt class="col-sm-3">Anger / Irritability</dt><dd class="col-sm-9">{{ mental.anger|default:"—" }}</dd>
+        <dt class="col-sm-3">Grief / Disappointment</dt><dd class="col-sm-9">{{ mental.grief|default:"—" }}</dd>
+        <dt class="col-sm-3">Likes</dt><dd class="col-sm-9">{{ mental.likes|default:"—" }}</dd>
+        <dt class="col-sm-3">Dislikes</dt><dd class="col-sm-9">{{ mental.dislikes|default:"—" }}</dd>
+        <dt class="col-sm-3">Sensitivity</dt><dd class="col-sm-9">{{ mental.sensitivity|default:"—" }}</dd>
+        <dt class="col-sm-3">Communication / Expression</dt><dd class="col-sm-9">{{ mental.communication|default:"—" }}</dd>
+      </dl>
+      {% else %}<span class="text-muted">Not recorded.</span>{% endif %}
+    </div></div>
+  </div>
+  {% endif %}
+
+  {% if access.diagnosis.view %}
+  <div class="accordion-item">
+    <h2 class="accordion-header"><button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#s-dx">Diagnosis</button></h2>
+    <div id="s-dx" class="accordion-collapse collapse show"><div class="accordion-body small">
+      {% if diagnosis %}
+      <dl class="row mb-0">
+        <dt class="col-sm-3">Provisional</dt><dd class="col-sm-9">{{ diagnosis.provisional|default:"—" }}</dd>
+        <dt class="col-sm-3">Differential</dt><dd class="col-sm-9">{{ diagnosis.differential|default:"—" }}</dd>
+        <dt class="col-sm-3">Final</dt><dd class="col-sm-9">{{ diagnosis.final|default:"—" }}</dd>
+      </dl>
+      {% else %}<span class="text-muted">Not recorded.</span>{% endif %}
+    </div></div>
+  </div>
+  {% endif %}
+
+  {% if access.prescription.view %}
+  <div class="accordion-item">
+    <h2 class="accordion-header"><button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#s-rx">Prescription</button></h2>
+    <div id="s-rx" class="accordion-collapse collapse show"><div class="accordion-body small">
+      {% for rx in prescriptions %}
+        <table class="table table-sm grid-table">
+          <thead><tr><th>#</th><th>Medicine</th><th>Potency</th><th>Duration</th><th>Instructions</th></tr></thead>
+          <tbody>{% for i in rx.items.all %}<tr><td>{{ forloop.counter }}</td><td>{{ i.medicine_name }}</td><td>{{ i.get_potency_display }}</td><td>{{ i.duration }}</td><td>{{ i.instructions }}</td></tr>{% endfor %}</tbody>
+        </table>
+        {% if rx.dietary_advice %}<div><strong>Dietary advice:</strong> {{ rx.dietary_advice|linebreaksbr }}</div>{% endif %}
+        {% if rx.followup_advice %}<div><strong>Follow-up advice:</strong> {{ rx.followup_advice|linebreaksbr }}</div>{% endif %}
+      {% empty %}<span class="text-muted">No prescription.</span>{% endfor %}
+    </div></div>
+  </div>
+  {% endif %}
+
+  <div class="accordion-item">
+    <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#s-inv">Investigations</button></h2>
+    <div id="s-inv" class="accordion-collapse collapse"><div class="accordion-body small">
+      {% for inv in investigations %}
+        <div class="mb-2"><span class="badge text-bg-{% if inv.status == 'COMPLETED' %}success{% else %}warning{% endif %}">{{ inv.get_status_display }}</span>
+          {{ inv.requested_date|date:"d-M-Y" }} — {{ inv.request_notes|default:"—" }}</div>
+        {% for r in inv.reports.all %}{% include "partials/file_chip.html" with f=r kind="report" can_remove=False %}{% endfor %}
+      {% empty %}<span class="text-muted">No investigations.</span>{% endfor %}
+    </div></div>
+  </div>
+
+  {% if access.followups.view %}
+  <div class="accordion-item">
+    <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#s-fu">Follow-up Notes</button></h2>
+    <div id="s-fu" class="accordion-collapse collapse"><div class="accordion-body small">
+      {% if followups %}
+      <table class="table table-sm grid-table mb-0">
+        <thead><tr><th>Date</th><th>Progress</th><th>Medicine</th><th>Next follow-up</th></tr></thead>
+        <tbody>{% for fu in followups %}<tr><td>{{ fu.visit_date|date:"d-M-Y" }}</td><td>{{ fu.progress_notes }}</td><td>{{ fu.medicines_given }}</td><td>{{ fu.next_followup_date|date:"d-M-Y"|default:"—" }}</td></tr>{% endfor %}</tbody>
+      </table>
+      {% else %}<span class="text-muted">No follow-up notes.</span>{% endif %}
+    </div></div>
+  </div>
+  {% endif %}
+</div>

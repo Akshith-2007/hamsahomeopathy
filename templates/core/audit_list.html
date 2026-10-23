@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Audit log{% endblock %}
+{% block container %}container-fluid px-lg-4{% endblock %}
+{% block content %}
+<h1 class="h4 mb-3"><i class="bi bi-journal-text"></i> Audit log</h1>
+<form class="row g-2 mb-3" method="get">
+  <div class="col-sm-6 col-lg-2"><select class="form-select form-select-sm" name="user"><option value="">All users</option>{% for u in users %}<option value="{{ u.pk }}" {% if filters.user == u.pk|stringformat:"s" %}selected{% endif %}>{{ u.username }}</option>{% endfor %}</select></div>
+  <div class="col-sm-6 col-lg-2"><select class="form-select form-select-sm" name="action"><option value="">All actions</option>{% for value, label in actions %}<option value="{{ value }}" {% if filters.action == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div class="col-sm-6 col-lg-2"><select class="form-select form-select-sm" name="model"><option value="">All records</option>{% for name in models %}{% if name %}<option value="{{ name }}" {% if filters.model == name %}selected{% endif %}>{{ name }}</option>{% endif %}{% endfor %}</select></div>
+  <div class="col-sm-3 col-lg-2"><input type="date" class="form-control form-control-sm" name="start" value="{{ filters.start }}"></div>
+  <div class="col-sm-3 col-lg-2"><input type="date" class="form-control form-control-sm" name="end" value="{{ filters.end }}"></div>
+  <div class="col-auto"><button class="btn btn-sm btn-primary">Filter</button></div>
+</form>
+<div class="card border-0 shadow-sm"><div class="table-responsive">
+<table class="table table-sm align-middle mb-0 small">
+  <thead class="table-light"><tr><th>When</th><th>User</th><th>Action</th><th>Record</th><th>Changes</th><th>IP</th></tr></thead>
+  <tbody>
+  {% for log in page %}
+    <tr>
+      <td class="text-nowrap">{{ log.timestamp|date:"d-M-Y H:i:s" }}</td>
+      <td>{{ log.username|default:"system" }}</td>
+      <td><span class="badge text-bg-{% if log.action == 'DELETE' or log.action == 'LOGIN_FAILED' or log.action == 'LOCK' %}danger{% elif log.action == 'CREATE' %}success{% elif log.action == 'UPDATE' %}primary{% else %}secondary{% endif %}">{{ log.get_action_display }}</span></td>
+      <td>{{ log.model_name }}{% if log.object_id %} #{{ log.object_id }}{% endif %}<div class="text-muted">{{ log.object_repr|truncatechars:60 }}</div></td>
+      <td style="max-width:32rem">
+        {% if log.changes %}
+        <details><summary>{{ log.changes|length }} field{{ log.changes|length|pluralize }}</summary>
+          <ul class="mb-0 ps-3">{% for key, value in log.changes.items %}<li><code>{{ key }}</code>: {% if value.items %}<span class="text-danger">{{ value.old|default:"∅" }}</span> → <span class="text-success">{{ value.new|default:"∅" }}</span>{% else %}{{ value }}{% endif %}</li>{% endfor %}</ul>
+        </details>
+        {% endif %}
+      </td>
+      <td>{{ log.ip_address|default:"" }}</td>
+    </tr>
+  {% empty %}<tr><td colspan="6" class="text-center text-muted py-4">No entries.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% include "partials/pagination.html" %}
+{% endblock %}
