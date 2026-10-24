@@ -60,6 +60,7 @@ Vercel runs the app as a serverless function. It detects `manage.py`, runs `coll
 |---|---|---|
 | Database | **Neon PostgreSQL** (Vercel → Storage → *Create* → Neon; choose region **AWS ap-south-1 Mumbai**) | `DATABASE_URL` is added automatically by the integration |
 | Uploaded files | **Cloudflare R2** bucket (private) + an API token with read/write on it | `S3_BUCKET_NAME`, `S3_ENDPOINT_URL` (`https://<account-id>.r2.cloudflarestorage.com`), `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` |
+| Uploaded files (no credit card) | **Backblaze B2** private bucket (10 GB free) + an application key with read/write on it | `S3_BUCKET_NAME`, `S3_ENDPOINT_URL` (`https://s3.<region>.backblazeb2.com`), `S3_REGION` (e.g. `eu-central-003`), `S3_ACCESS_KEY_ID` (keyID), `S3_SECRET_ACCESS_KEY` (applicationKey) |
 | App secrets | — | `DJANGO_SECRET_KEY` (long random text), `CRON_SECRET` (random text), optionally `CLINIC_NAME`, `TIME_ZONE=Asia/Kolkata` |
 
 Steps:

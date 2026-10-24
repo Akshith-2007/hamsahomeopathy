@@ -238,6 +238,11 @@ if S3_BUCKET_NAME:
             "querystring_auth": True,                       # signed, expiring download links
             "querystring_expire": int(env("S3_URL_EXPIRE_SECONDS", "300")),
             "file_overwrite": False,
+            # Backblaze B2 needs path-style URLs; R2 and AWS work either way.
+            "addressing_style": env("S3_ADDRESSING_STYLE", "path"),
+            # Only send integrity checksums when required: some S3-compatible services reject them.
+            "client_config": __import__("botocore.config", fromlist=["Config"]).Config(
+                request_checksum_calculation="when_required", response_checksum_validation="when_required"),
         },
     }
 else:
