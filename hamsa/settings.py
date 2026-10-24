@@ -65,6 +65,15 @@ if _render_host:
     ALLOWED_HOSTS.append(_render_host)
     CSRF_TRUSTED_ORIGINS.append(f"https://{_render_host}")
 
+# Vercel sets VERCEL=1 and the deployment's hostnames.
+ON_VERCEL = env_bool("VERCEL")
+if ON_VERCEL:
+    for _name in ("VERCEL_URL", "VERCEL_BRANCH_URL", "VERCEL_PROJECT_PRODUCTION_URL"):
+        _host = env(_name)
+        if _host and _host not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(_host)
+            CSRF_TRUSTED_ORIGINS.append(f"https://{_host}")
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -80,7 +89,7 @@ INSTALLED_APPS = [
     "accounts",
     "core",
     "clinic",
-    "api",
+    "restapi",
 ]
 
 MIDDLEWARE = [
@@ -127,8 +136,8 @@ if env("DB_ENGINE", "postgres") == "sqlite":
         }
     }
 elif env("DATABASE_URL"):
-    # Hosted PostgreSQL (e.g. Render): postgres://user:password@host:port/dbname
-    from urllib.parse import unquote, urlparse
+    # Hosted PostgreSQL (Render, Neon/Vercel): postgres://user:password@host:port/dbname?sslmode=require
+    from urllib.parse import parse_qsl, unquote, urlparse
 
     _db = urlparse(env("DATABASE_URL"))
     DATABASES = {
@@ -139,8 +148,10 @@ elif env("DATABASE_URL"):
             "PASSWORD": unquote(_db.password or ""),
             "HOST": _db.hostname or "localhost",
             "PORT": str(_db.port or 5432),
-            "CONN_MAX_AGE": int(env("POSTGRES_CONN_MAX_AGE", "60")),
+            # Serverless functions shouldn't hold connections open between requests.
+            "CONN_MAX_AGE": int(env("POSTGRES_CONN_MAX_AGE", "0" if ON_VERCEL else "60")),
             "CONN_HEALTH_CHECKS": True,
+            "OPTIONS": dict(parse_qsl(_db.query)),  # e.g. sslmode=require, channel_binding=require
         }
     }
 else:
@@ -190,10 +201,10 @@ SESSION_COOKIE_SECURE = SECURE_COOKIES
 CSRF_COOKIE_SECURE = SECURE_COOKIES
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "SAMEORIGIN"  # PDF previews are embedded in iframes
-if env_bool("DJANGO_BEHIND_TLS_PROXY"):
+if env_bool("DJANGO_BEHIND_TLS_PROXY", ON_VERCEL):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # Enable once the site is HTTPS-only.
-SECURE_SSL_REDIRECT = env_bool("DJANGO_SSL_REDIRECT", False)
+SECURE_SSL_REDIRECT = env_bool("DJANGO_SSL_REDIRECT", ON_VERCEL)
 SECURE_HSTS_SECONDS = int(env("DJANGO_HSTS_SECONDS", "0"))
 
 # --- I18N ---------------------------------------------------------------------
@@ -207,8 +218,30 @@ DATE_INPUT_FORMATS = ["%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"]
 STATIC_URL = "/static/"
 STATIC_ROOT = Path(env("STATIC_ROOT", BASE_DIR / "staticfiles"))
 STATICFILES_DIRS = [BASE_DIR / "static"]
+# Uploads go to S3-compatible object storage (Cloudflare R2, AWS S3, …) when a bucket is configured,
+# which is required on Vercel because its filesystem is not persistent.
+S3_BUCKET_NAME = env("S3_BUCKET_NAME")
+if S3_BUCKET_NAME:
+    _default_storage = {
+        "BACKEND": "core.storage.ProtectedS3Storage",
+        "OPTIONS": {
+            "bucket_name": S3_BUCKET_NAME,
+            "endpoint_url": env("S3_ENDPOINT_URL"),          # e.g. https://<account>.r2.cloudflarestorage.com
+            "access_key": env("S3_ACCESS_KEY_ID"),
+            "secret_key": env("S3_SECRET_ACCESS_KEY"),
+            "region_name": env("S3_REGION", "auto"),
+            "signature_version": "s3v4",
+            "default_acl": None,                            # bucket stays private
+            "querystring_auth": True,                       # signed, expiring download links
+            "querystring_expire": int(env("S3_URL_EXPIRE_SECONDS", "300")),
+            "file_overwrite": False,
+        },
+    }
+else:
+    _default_storage = {"BACKEND": "django.core.files.storage.FileSystemStorage"}
+
 STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "default": _default_storage,
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
         if not DEBUG
@@ -224,6 +257,10 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 MAX_DOCUMENT_UPLOAD_MB = 20
 MAX_IMAGE_UPLOAD_MB = 5
+# Hard cap per request imposed by the host (Vercel rejects bodies over 4.5 MB). 0 = no cap.
+MAX_REQUEST_MB = float(env("MAX_REQUEST_MB", "4.4" if ON_VERCEL else "0"))
+# Shared secret Vercel Cron sends as "Authorization: Bearer <CRON_SECRET>".
+CRON_SECRET = env("CRON_SECRET", "")
 
 # --- REST framework -------------------------------------------------------------
 REST_FRAMEWORK = {

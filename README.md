@@ -52,6 +52,32 @@ python manage.py runserver 0.0.0.0:5000
 
 ---
 
+## Deploy on Vercel (online)
+
+Vercel runs the app as a serverless function. It detects `manage.py`, runs `collectstatic` and serves static files from its CDN. [vercel.json](vercel.json) sets the region to Mumbai (`bom1`) and a daily cron job. Vercel has no database or file disk, so you need two free add-ons:
+
+| Need | Use | Settings to add in Vercel → Project → Settings → Environment Variables |
+|---|---|---|
+| Database | **Neon PostgreSQL** (Vercel → Storage → *Create* → Neon; choose region **AWS ap-south-1 Mumbai**) | `DATABASE_URL` is added automatically by the integration |
+| Uploaded files | **Cloudflare R2** bucket (private) + an API token with read/write on it | `S3_BUCKET_NAME`, `S3_ENDPOINT_URL` (`https://<account-id>.r2.cloudflarestorage.com`), `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` |
+| App secrets | — | `DJANGO_SECRET_KEY` (long random text), `CRON_SECRET` (random text), optionally `CLINIC_NAME`, `TIME_ZONE=Asia/Kolkata` |
+
+Steps:
+
+1. In [vercel.com](https://vercel.com), choose **Add New → Project → Import** the `hamsahomeopathy` GitHub repo. Framework: *Django* (detected).
+2. Add the Neon database and the environment variables above, then **Deploy**.
+3. **Create the tables:** on this PC, run `powershell -ExecutionPolicy Bypass -File scriptsercel_migrate.ps1`. Paste the Neon `DATABASE_URL` when asked and choose the online `admin` password. Add `-SeedDemo` to load demo data. Run it again whenever an update adds migrations.
+4. Open `https://<project>.vercel.app` and sign in as `admin`.
+
+Limits of the Vercel version:
+
+* **4.5 MB per upload/save:** Vercel rejects larger requests, and the app warns before sending. Compress big PDFs or scans, or upload them one at a time.
+* **File storage:** uploaded files live in the private R2 bucket. The app checks the user's role, then redirects to a signed link that is valid for 5 minutes.
+* **Daily cron:** missed follow-ups and reminders run once a day at 08:00 IST through Vercel Cron (`/cron/daily/`, protected by `CRON_SECRET`).
+* **Notifications:** the bell polls every 12 seconds, so each open browser tab makes regular function calls.
+* **Data location:** patient data is stored with Neon and Cloudflare, not on the clinic PC.
+* **Package name:** the Django REST app lives in `restapi/` rather than `api/`, because Vercel reserves the top-level `api/` folder. Web addresses (`/api/...`) are unchanged.
+
 ## Deploy on Render (online)
 
 The repo includes a [render.yaml](render.yaml) Blueprint: a Docker web service (Singapore region) with a 1 GB persistent disk for uploads, and a PostgreSQL database.

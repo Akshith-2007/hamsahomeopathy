@@ -4,9 +4,15 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db import connection
-from django.http import JsonResponse
+import hmac
+import io
+
+from django.core.files.storage import default_storage
+from django.core.management import call_command
+from django.http import Http404, HttpResponseForbidden, JsonResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.cache import never_cache
+from django.views.decorators.csrf import csrf_exempt
 from django.views.static import serve
 
 from accounts.rbac import can_view, can_view_report, home_view_name, section_required
@@ -41,6 +47,8 @@ def home(request):
 @never_cache
 def protected_media(request, path):
     parts = path.split("/")
+    if ".." in parts or path.startswith("/"):
+        raise PermissionDenied
     if parts[0] == "patients" and len(parts) >= 4:
         section = MEDIA_SECTIONS.get(parts[2])
         if section is None or not can_view(request.user, section):
@@ -51,6 +59,13 @@ def protected_media(request, path):
                 raise PermissionDenied
     elif parts[0] != "signatures":
         raise PermissionDenied
+    if hasattr(default_storage, "signed_url"):
+        # Object storage (e.g. on Vercel): access was checked above; hand out a short-lived signed link.
+        if not default_storage.exists(path):
+            raise Http404
+        response = redirect(default_storage.signed_url(path))
+        response["Cache-Control"] = "private, no-store"
+        return response
     response = serve(request, path, document_root=settings.MEDIA_ROOT)
     response["Cache-Control"] = "private, no-store"
     return response
@@ -105,3 +120,15 @@ def permission_denied(request, exception=None):
 
 def not_found(request, exception=None):
     return render(request, "404.html", status=404)
+
+
+@csrf_exempt
+def cron_daily(request):
+    """Daily jobs for hosts without a scheduler shell (Vercel Cron calls this with the CRON_SECRET)."""
+    expected = f"Bearer {settings.CRON_SECRET}"
+    if not settings.CRON_SECRET or not hmac.compare_digest(request.headers.get("Authorization", ""), expected):
+        return HttpResponseForbidden("Forbidden")
+    output = io.StringIO()
+    call_command("mark_missed_followups", stdout=output)
+    call_command("send_followup_reminders", stdout=output)
+    return JsonResponse({"status": "ok", "log": output.getvalue().strip().splitlines()})

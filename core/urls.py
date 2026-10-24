@@ -7,4 +7,5 @@ urlpatterns = [
     path("audit/", views.audit_list, name="audit_list"),
     path("healthz", views.healthz, name="healthz"),
     path("readyz", views.readyz, name="readyz"),
+    path("cron/daily/", views.cron_daily, name="cron_daily"),
 ]

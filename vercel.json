@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["bom1"],
+  "functions": {
+    "hamsa/wsgi.py": {
+      "maxDuration": 60,
+      "excludeFiles": "{k8s/**,docker/**,scripts/**,**/tests.py,**/tests_*.py}"
+    }
+  },
+  "crons": [
+    { "path": "/cron/daily/", "schedule": "30 2 * * *" }
+  ]
+}

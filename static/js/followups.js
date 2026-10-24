@@ -2,6 +2,23 @@
 (function () {
   "use strict";
 
+  // Hosts like Vercel reject requests over ~4.5 MB; check uploads before sending (capture phase,
+  // so it also runs before AJAX upload handlers).
+  const maxMb = parseFloat(document.body.dataset.maxRequestMb || "0");
+  if (maxMb > 0) {
+    document.addEventListener("submit", (e) => {
+      const form = e.target;
+      const bytes = Array.from(form.querySelectorAll("input[type=file]"))
+        .reduce((sum, input) => sum + Array.from(input.files || []).reduce((s, f) => s + f.size, 0), 0);
+      if (bytes > maxMb * 1024 * 1024) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        alert(`These files total ${(bytes / 1048576).toFixed(1)} MB. The online version accepts up to ${maxMb} MB per save. ` +
+              "Upload fewer files at a time or compress the PDF/photo.");
+      }
+    }, true);
+  }
+
   // <form data-confirm="..."> asks before submitting.
   document.addEventListener("submit", (e) => {
     const form = e.target;
