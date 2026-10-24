@@ -1,0 +1,53 @@
+# Render Blueprint: one web service (Docker) + one PostgreSQL database.
+# In Render: New + -> Blueprint -> pick this GitHub repo. You'll be asked for DJANGO_ADMIN_PASSWORD.
+databases:
+  - name: hamsa-db
+    plan: free             # free Postgres is time-limited on Render; switch to 0.1c-256mb or larger for real use
+    region: singapore
+    databaseName: hamsa
+    user: hamsa
+
+services:
+  - type: web
+    name: hamsa-homeo
+    runtime: docker
+    plan: 0.5c-512mb       # paid instance: needed for the persistent disk that stores uploads
+    region: singapore
+    healthCheckPath: /healthz
+    disk:
+      name: hamsa-media
+      mountPath: /app/media
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: hamsa-db
+          property: connectionString
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_ADMIN_PASSWORD   # first admin login (user "admin"); entered once when creating the Blueprint
+        sync: false
+      - key: DJANGO_ADMIN_USERNAME
+        value: admin
+      - key: DJANGO_DEBUG
+        value: "false"
+      - key: DJANGO_BEHIND_TLS_PROXY   # Render terminates HTTPS in front of the app
+        value: "true"
+      - key: DJANGO_SECURE_COOKIES
+        value: "true"
+      - key: DJANGO_SSL_REDIRECT
+        value: "true"
+      - key: DJANGO_HSTS_SECONDS
+        value: "86400"
+      - key: RUN_MIGRATIONS
+        value: "true"
+      - key: SEED_DEMO_DATA            # set to "true" for one deploy to load demo data, then back to "false"
+        value: "false"
+      - key: MEDIA_ROOT
+        value: /app/media
+      - key: WEB_CONCURRENCY
+        value: "2"
+      - key: TIME_ZONE
+        value: Asia/Kolkata
+      - key: CLINIC_NAME
+        value: Hamsa Homeopathy

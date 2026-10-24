@@ -52,6 +52,23 @@ python manage.py runserver 0.0.0.0:5000
 
 ---
 
+## Deploy on Render (online)
+
+The repo includes a [render.yaml](render.yaml) Blueprint: a Docker web service (Singapore region) with a 1 GB persistent disk for uploads, and a PostgreSQL database.
+
+1. Push this repo to GitHub (done).
+2. In [Render](https://dashboard.render.com), go to **New + → Blueprint** and pick the `hamsahomeopathy` repo.
+3. Enter a strong value for **`DJANGO_ADMIN_PASSWORD`** when asked. The first login will be user `admin` with that password. Render generates `DJANGO_SECRET_KEY` for you.
+4. Click **Apply**. The first build takes a few minutes. Migrations run automatically on every deploy, and the site appears at `https://hamsa-homeo.onrender.com` (or the name Render shows).
+
+Notes:
+
+* **Cost:** the web service uses a paid instance (`0.5c-512mb`), because Render only offers persistent disks on paid instances. Without a disk, uploaded photos and reports would be lost on every deploy.
+* **Database plan:** the database starts on Render's `free` plan, which is time-limited. Change `plan:` to `0.1c-256mb` (or larger) before storing real patient data, and turn on backups.
+* **Demo data:** to load it once, set `SEED_DEMO_DATA=true` in the service's Environment tab, deploy, then set it back to `false`. Change the demo passwords afterwards.
+* **Scheduled jobs:** follow-up reminders and marking missed follow-ups are not scheduled on Render by default. Add a Render Cron Job running `python manage.py mark_missed_followups && python manage.py send_followup_reminders` with the same environment, or run it from the Render shell.
+* **Settings:** the app reads Render's `DATABASE_URL` and `RENDER_EXTERNAL_HOSTNAME` automatically. HTTPS redirects, secure cookies and HSTS are switched on through the blueprint's environment variables.
+
 ## Docker Compose
 
 ```bash

@@ -19,9 +19,9 @@ RUN sed -i 's/\r$//' docker/entrypoint.sh && chmod +x docker/entrypoint.sh \
  && useradd --uid 1000 --create-home app \
  && mkdir -p /app/media && chown -R app:app /app/media
 
-USER app
+# No USER here: the entrypoint fixes ownership of the uploads disk as root, then drops to "app".
 EXPOSE 5000
-VOLUME ["/app/media"]
 
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
-CMD ["gunicorn", "hamsa.wsgi:application", "--bind", "0.0.0.0:5000", "--workers", "3", "--timeout", "120", "--access-logfile", "-"]
+# Listens on $PORT when the host sets it (Render), otherwise 5000.
+CMD ["sh", "-c", "exec gunicorn hamsa.wsgi:application --bind 0.0.0.0:${PORT:-5000} --workers ${WEB_CONCURRENCY:-3} --timeout 120 --access-logfile -"]
