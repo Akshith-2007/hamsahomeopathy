@@ -129,9 +129,28 @@ class Visit(AuditedModel):
         NEW = "NEW", "New case"
         FOLLOW_UP = "FOLLOW_UP", "Follow-up"
 
+    class Status(models.TextChoices):
+        WAITING = "WAITING", "Waiting"
+        IN_CONSULTATION = "IN_CONSULTATION", "In consultation"
+        COMPLETED = "COMPLETED", "Completed"
+
+    class Mode(models.TextChoices):
+        IN_PERSON = "IN_PERSON", "In person"
+        THROUGH_FAMILY = "THROUGH_FAMILY", "Through family member"
+
     patient = models.ForeignKey(Patient, on_delete=models.PROTECT, related_name="visits")
     visit_date = models.DateField(default=timezone.localdate, db_index=True)
     visit_type = models.CharField(max_length=10, choices=Type.choices, default=Type.NEW)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.WAITING, db_index=True)
+    previous_visit = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="next_visits",
+        help_text="For follow-ups: the visit this one continues.",
+    )
+    consultation_mode = models.CharField(max_length=16, choices=Mode.choices, default=Mode.IN_PERSON)
+    reported_by = models.ForeignKey(
+        Patient, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+        help_text="Family member who reported the complaint (through-family consultations).",
+    )
     doctor = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="visits",
         limit_choices_to={"role": "DOCTOR", "is_active": True},
@@ -180,7 +199,16 @@ class VisitSection(AuditedModel):
         return f"{self._meta.verbose_name} – {self.visit}"
 
 
-class CaseHistory(VisitSection):
+class PrefillSourcesMixin(models.Model):
+    """Which earlier visit each pre-filled stable-history value came from (audit trail)."""
+
+    prefill_sources = models.JSONField(default=dict, blank=True, editable=False)
+
+    class Meta:
+        abstract = True
+
+
+class CaseHistory(PrefillSourcesMixin, VisitSection):
     visit = models.OneToOneField(Visit, on_delete=models.CASCADE, related_name="case_history")
     presenting_complaints = models.TextField()
     past_history = models.TextField(blank=True)
@@ -191,7 +219,7 @@ class CaseHistory(VisitSection):
         verbose_name_plural = "case histories"
 
 
-class PhysicalGeneral(VisitSection):
+class PhysicalGeneral(PrefillSourcesMixin, VisitSection):
     class Thermal(models.TextChoices):
         HOT = "HOT", "Hot"
         CHILLY = "CHILLY", "Chilly"
@@ -217,7 +245,7 @@ class PhysicalGeneral(VisitSection):
         db_table = "physical_generals"
 
 
-class MentalGeneral(VisitSection):
+class MentalGeneral(PrefillSourcesMixin, VisitSection):
     visit = models.OneToOneField(Visit, on_delete=models.CASCADE, related_name="mental_generals")
     disposition = models.TextField("Disposition / Temperament", blank=True)
     company_social = models.TextField("Company / Social", blank=True)
@@ -238,6 +266,24 @@ class MentalGeneral(VisitSection):
 
     class Meta:
         db_table = "mental_generals"
+
+
+class FollowUpNote(VisitSection):
+    """Follow-up case sheet: what changed since the previous visit."""
+
+    class Response(models.TextChoices):
+        BETTER = "BETTER", "Better"
+        SAME = "SAME", "No change"
+        WORSE = "WORSE", "Worse"
+        MIXED = "MIXED", "Mixed / aggravation then relief"
+
+    visit = models.OneToOneField(Visit, on_delete=models.CASCADE, related_name="followup_note")
+    changes_since_last = models.TextField("Changes since last visit", blank=True)
+    remedy_response = models.CharField("Response to remedy", max_length=10, choices=Response.choices, blank=True)
+    notes = models.TextField("Doctor's notes", blank=True)
+
+    class Meta:
+        db_table = "followup_notes"
 
 
 class Examination(VisitSection):
@@ -284,6 +330,7 @@ class Investigation(AuditedModel):
     request_notes = models.TextField("Investigations", blank=True)
     requested_date = models.DateField(default=timezone.localdate)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.REQUESTED, db_index=True)
+    completed_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     class Meta:
         db_table = "investigations"
@@ -301,10 +348,19 @@ class InvestigationReport(UploadMixin, AuditedModel):
         EXTERNAL = "EXTERNAL", "External (from patient)"
         LAB = "LAB", "Clinic laboratory"
 
+    class Version(models.TextChoices):
+        CURRENT = "CURRENT", "Current"
+        SUPERSEDED = "SUPERSEDED", "Superseded"
+
     investigation = models.ForeignKey(Investigation, on_delete=models.CASCADE, related_name="reports")
     file = models.FileField(upload_to=upload_investigations, validators=document_validators(20))
     source = models.CharField(max_length=10, choices=Source.choices, default=Source.EXTERNAL)
     title = models.CharField(max_length=200, blank=True)
+    remarks = models.TextField(blank=True)
+    version = models.PositiveSmallIntegerField(default=1)
+    status = models.CharField(max_length=10, choices=Version.choices, default=Version.CURRENT, db_index=True)
+    supersedes = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="corrections",
+                                   help_text="The report this corrected version replaces.")
 
     class Meta:
         db_table = "investigation_reports"
@@ -320,7 +376,7 @@ class InvestigationReport(UploadMixin, AuditedModel):
 # --------------------------------------------------------------------------- #
 # Past treatment
 # --------------------------------------------------------------------------- #
-class PastTreatment(VisitSection):
+class PastTreatment(PrefillSourcesMixin, VisitSection):
     visit = models.OneToOneField(Visit, on_delete=models.CASCADE, related_name="past_treatment")
     previous_medication = models.TextField(blank=True, help_text="Allopathic / homeopathic medicines taken")
     duration = models.CharField(max_length=120, blank=True)
@@ -473,10 +529,23 @@ class Prescription(AuditedModel):
         return self.visit.patient
 
 
+class MedicineForm(models.TextChoices):
+    GLOBULES = "GLOBULES", "Globules"
+    PILLS = "PILLS", "Pills"
+    TABLETS = "TABLETS", "Tablets"
+    LIQUID = "LIQUID", "Liquid / dilution"
+    POWDER = "POWDER", "Powder"
+    OINTMENT = "OINTMENT", "Ointment"
+    OTHER = "OTHER", "Other"
+
+
 class PrescriptionItem(AuditedModel):
     prescription = models.ForeignKey(Prescription, on_delete=models.CASCADE, related_name="items")
     medicine_name = models.CharField("Medicine", max_length=150)
     potency = models.CharField(max_length=10, choices=Potency.choices, blank=True)
+    form = models.CharField(max_length=10, choices=MedicineForm.choices, blank=True)
+    quantity = models.CharField(max_length=40, blank=True, help_text="e.g. 2 dram, 30 ml, 6 doses")
+    dose = models.CharField("Dose / repetition", max_length=120, blank=True, help_text="e.g. 4 pills, 3 times a day")
     duration = models.CharField(max_length=60, blank=True)
     instructions = models.CharField(max_length=255, blank=True)
     order = models.PositiveSmallIntegerField(default=0)
@@ -508,3 +577,203 @@ class FollowUp(AuditedModel):
 
     def get_patient(self):
         return self.visit.patient
+
+
+# --------------------------------------------------------------------------- #
+# Follow-up scheduling (appointments)
+# --------------------------------------------------------------------------- #
+class ScheduledFollowUp(AuditedModel):
+    class Status(models.TextChoices):
+        SCHEDULED = "SCHEDULED", "Scheduled"
+        COMPLETED = "COMPLETED", "Completed"
+        MISSED = "MISSED", "Missed"
+        CANCELLED = "CANCELLED", "Cancelled"
+
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="scheduled_followups")
+    source_visit = models.ForeignKey(Visit, null=True, blank=True, on_delete=models.SET_NULL,
+                                     related_name="scheduled_followups", help_text="Visit that asked for this follow-up.")
+    checkin_visit = models.ForeignKey(Visit, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+                                      help_text="Visit created when the patient checked in for it.")
+    scheduled_date = models.DateField(db_index=True)
+    scheduled_time = models.TimeField(null=True, blank=True)
+    notes = models.TextField("Doctor's notes", blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.SCHEDULED, db_index=True)
+    scheduled_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                     related_name="+")
+    status_changed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "scheduled_followups"
+        ordering = ["scheduled_date", "scheduled_time", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["patient"], condition=models.Q(status="SCHEDULED", is_deleted=False),
+                name="one_active_followup_per_patient",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Follow-up {self.scheduled_date:%d-%b-%Y} – {self.patient.full_name} ({self.get_status_display()})"
+
+    def get_patient(self):
+        return self.patient
+
+    @property
+    def is_overdue(self):
+        return self.status == self.Status.SCHEDULED and self.scheduled_date < timezone.localdate()
+
+
+# --------------------------------------------------------------------------- #
+# Family links between patients
+# --------------------------------------------------------------------------- #
+class Relationship(models.TextChoices):
+    FATHER = "FATHER", "Father"
+    MOTHER = "MOTHER", "Mother"
+    PARENT = "PARENT", "Parent"
+    SPOUSE = "SPOUSE", "Spouse"
+    SON = "SON", "Son"
+    DAUGHTER = "DAUGHTER", "Daughter"
+    CHILD = "CHILD", "Child"
+    BROTHER = "BROTHER", "Brother"
+    SISTER = "SISTER", "Sister"
+    SIBLING = "SIBLING", "Sibling"
+    GRANDFATHER = "GRANDFATHER", "Grandfather"
+    GRANDMOTHER = "GRANDMOTHER", "Grandmother"
+    GRANDPARENT = "GRANDPARENT", "Grandparent"
+    GRANDSON = "GRANDSON", "Grandson"
+    GRANDDAUGHTER = "GRANDDAUGHTER", "Granddaughter"
+    GRANDCHILD = "GRANDCHILD", "Grandchild"
+    UNCLE = "UNCLE", "Uncle"
+    AUNT = "AUNT", "Aunt"
+    NEPHEW = "NEPHEW", "Nephew"
+    NIECE = "NIECE", "Niece"
+    OTHER = "OTHER", "Other"
+
+
+class PatientRelationship(AuditedModel):
+    """`related_patient` is `patient`'s <relationship>. Always stored as a pair (see clinic.relationships)."""
+
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="relationships")
+    related_patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="+")
+    class Source(models.TextChoices):
+        MANUAL = "MANUAL", "Linked"
+        INFERRED = "INFERRED", "Auto-linked"
+
+    class LinkStatus(models.TextChoices):
+        ACTIVE = "ACTIVE", "Active"
+        REJECTED = "REJECTED", "Rejected"
+
+    relationship = models.CharField(max_length=14, choices=Relationship.choices)
+    label = models.CharField(max_length=60, blank=True, help_text="Free text for 'Other' (e.g. Cousin).")
+    source = models.CharField(max_length=8, choices=Source.choices, default=Source.MANUAL, db_index=True)
+    inferred_via = models.ForeignKey(Patient, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+                                     help_text="Relative through whom an inferred link was worked out.")
+    status = models.CharField(max_length=8, choices=LinkStatus.choices, default=LinkStatus.ACTIVE, db_index=True)
+
+    class Meta:
+        db_table = "patient_relationships"
+        ordering = ["patient_id", "relationship", "id"]
+        constraints = [
+            # One live link per ordered pair: blocks duplicates and conflicting relationships.
+            models.UniqueConstraint(fields=["patient", "related_patient"], condition=models.Q(is_deleted=False),
+                                    name="one_relationship_per_pair"),
+            models.CheckConstraint(condition=~models.Q(patient=models.F("related_patient")),
+                                   name="no_self_relationship"),
+        ]
+
+    def __str__(self):
+        return f"{self.related_patient.full_name} is {self.patient.full_name}'s {self.display_label}"
+
+    def get_patient(self):
+        return self.patient
+
+    @property
+    def display_label(self):
+        if self.relationship == Relationship.OTHER and self.label:
+            return self.label
+        return self.get_relationship_display()
+
+
+# --------------------------------------------------------------------------- #
+# Pharmacy (reception dispenses)
+# --------------------------------------------------------------------------- #
+class DispenseOrder(AuditedModel):
+    class Status(models.TextChoices):
+        SENT = "SENT", "New"
+        PREPARING = "PREPARING", "Preparing"
+        READY = "READY", "Ready"
+        DISPENSED = "DISPENSED", "Dispensed"
+        CANCELLED = "CANCELLED", "Cancelled"
+        SUPERSEDED = "SUPERSEDED", "Superseded"
+
+    ACTIVE = (Status.SENT, Status.PREPARING, Status.READY)
+
+    visit = models.ForeignKey(Visit, on_delete=models.CASCADE, related_name="dispense_orders")
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="dispense_orders")
+    prescription = models.ForeignKey(Prescription, on_delete=models.CASCADE, related_name="dispense_orders")
+    version = models.PositiveSmallIntegerField(default=1)
+    is_update = models.BooleanField(default=False, help_text="Sent because the doctor changed a sent prescription.")
+    previous_order = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    removed_items = models.JSONField(default=list, blank=True, help_text="Items dropped since the previous version.")
+    collect_by = models.ForeignKey(Patient, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+                                   help_text="Family member collecting the medicines (through-family consultations).")
+    collect_by_label = models.CharField(max_length=60, blank=True, help_text="e.g. son")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.SENT, db_index=True)
+    sent_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    sent_at = models.DateTimeField(default=timezone.now, db_index=True)
+    prepared_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name="+")
+    prepared_at = models.DateTimeField(null=True, blank=True)
+    ready_at = models.DateTimeField(null=True, blank=True)
+    dispensed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                     related_name="+")
+    dispensed_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "dispense_orders"
+        ordering = ["sent_at", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["prescription", "version"], name="unique_dispense_version"),
+        ]
+
+    def __str__(self):
+        return f"Dispense v{self.version} – {self.patient.full_name} ({self.get_status_display()})"
+
+    def get_patient(self):
+        return self.patient
+
+    @property
+    def is_active(self):
+        return self.status in self.ACTIVE
+
+
+class DispenseItem(models.Model):
+    """Frozen copy of a prescription item at the moment it was sent."""
+
+    class Change(models.TextChoices):
+        UNCHANGED = "", "Unchanged"
+        ADDED = "ADDED", "Added"
+        CHANGED = "CHANGED", "Changed"
+
+    order = models.ForeignKey(DispenseOrder, on_delete=models.CASCADE, related_name="items")
+    medicine_name = models.CharField(max_length=150)
+    potency = models.CharField(max_length=10, blank=True)
+    form = models.CharField(max_length=10, blank=True)
+    quantity = models.CharField(max_length=40, blank=True)
+    dose = models.CharField(max_length=120, blank=True)
+    duration = models.CharField(max_length=60, blank=True)
+    instructions = models.CharField(max_length=255, blank=True)
+    position = models.PositiveSmallIntegerField(default=0)
+    change = models.CharField(max_length=7, choices=Change.choices, blank=True)
+
+    class Meta:
+        db_table = "dispense_items"
+        ordering = ["position", "id"]
+
+    def __str__(self):
+        return f"{self.medicine_name} {self.potency}".strip()
+
+    @property
+    def form_display(self):
+        return MedicineForm(self.form).label if self.form in MedicineForm.values else self.form

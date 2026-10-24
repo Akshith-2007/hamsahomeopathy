@@ -113,3 +113,56 @@ body { background: var(--bg); font-size: .925rem; color: #1f2937; }
   .no-print, .app-navbar, footer { display: none !important; }
   body { background: #fff; }
 }
+
+/* ---------- doctor history ---------- */
+.summary-bar { border-left: 4px solid var(--brand-2) !important; }
+.summary-facts { display: flex; flex-wrap: wrap; gap: .25rem 1.5rem; }
+.summary-facts dt { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; font-weight: 600; }
+.summary-facts dd { margin: 0; font-size: .9rem; max-width: 18rem; }
+.tl-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; font-weight: 600; }
+.timeline { border-left: 3px solid #dbeafe; padding-left: .9rem; }
+.timeline-item { position: relative; margin-bottom: .6rem; }
+.timeline-item::before { content: ""; position: absolute; left: -1.33rem; top: .85rem; width: .7rem; height: .7rem; border-radius: 50%; background: #93c5fd; border: 2px solid #fff; }
+.timeline-item.is-current::before { background: #f59e0b; }
+.timeline-head { display: flex; align-items: center; gap: .5rem; width: 100%; text-align: left; border: 1px solid var(--card-border); background: #f8fbff; border-radius: .5rem; padding: .45rem .7rem; }
+.timeline-head .chev { transition: transform .2s; }
+.timeline-head.collapsed .chev { transform: rotate(-90deg); }
+.timeline-item.is-current .timeline-head { background: #fffbeb; border-color: #fcd34d; }
+.timeline-body { border: 1px solid var(--card-border); border-top: 0; border-radius: 0 0 .5rem .5rem; padding: .7rem; font-size: .85rem; background: #fff; }
+.prev-rx { border: 1px solid var(--card-border); border-radius: .5rem; padding: .6rem .75rem; margin-bottom: .6rem; }
+.prev-rx-latest { border-color: #86efac; background: #f6fef9; }
+.compare-prev { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: .5rem; padding: .7rem; }
+
+/* ---------- family ---------- */
+.family-step { background: #f8fbff; border: 1px solid var(--card-border); border-radius: .5rem; padding: .75rem; }
+.family-panel { background: #f8fbff; border: 1px solid #c7d7fe; border-radius: .5rem; padding: .75rem; }
+.family-row { border-top: 1px dashed #cbd5e1; padding: .5rem 0; }
+.family-row:first-of-type { border-top: 0; }
+.dx-chip { display: inline-block; background: #eef2ff; border-radius: 999px; padding: .1rem .6rem; margin: .1rem .2rem .1rem 0; }
+
+/* ---------- pharmacy ---------- */
+.pharmacy-box { border: 1px solid #bbf7d0; background: #f6fef9; border-radius: .5rem; padding: .6rem .75rem; }
+.pharmacy-sent { background: #dc3545; color: #fff; }
+.pharmacy-preparing { background: #ffc107; color: #111; }
+.pharmacy-ready { background: #198754; color: #fff; }
+.pharmacy-dispensed { background: #0d6efd; color: #fff; }
+.pharmacy-cancelled, .pharmacy-superseded { background: #e2e8f0; color: #475569; }
+.pharmacy-column { background: #fff; border: 1px solid var(--card-border); border-radius: .75rem; padding: .6rem; min-height: 8rem; }
+.pharmacy-column-head { font-weight: 700; margin-bottom: .5rem; font-size: 1.05rem; }
+.order-card { border: 1px solid var(--card-border); }
+.order-card.order-updated { border: 2px solid #f59e0b; }
+.order-items td { padding: .3rem .2rem; }
+.item-added td { background: #dcfce7; }
+.item-changed td { background: #fef3c7; }
+.item-removed td { background: #fee2e2; color: #991b1b; }
+.btn-touch { padding: .5rem .8rem; font-size: .95rem; }
+.notif-menu { width: 22rem; max-width: 92vw; }
+.notif-menu .list-group { max-height: 60vh; overflow-y: auto; }
+:target.order-card { box-shadow: 0 0 0 3px #93c5fd; }
+
+/* ---------- phase 3: pre-fill, past summary, pickups ---------- */
+.prefilled { background-color: #fffbea !important; border-color: #f2d48b !important; }
+.prefill-tag { font-size: .7rem; color: #92400e; margin-top: .1rem; }
+.past-summary { background: #f8fbff; border: 1px solid #c7d7fe; border-radius: .5rem; padding: .6rem .75rem; }
+.pickup-note { background: #eef6ff; border-radius: .35rem; padding: .2rem .45rem; font-size: .8rem; margin-bottom: .35rem; }
+.lab-overdue td:first-child { border-left: 4px solid #dc3545; }

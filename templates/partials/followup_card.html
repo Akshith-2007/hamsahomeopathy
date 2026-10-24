@@ -1,0 +1,65 @@
+{# "Next follow-up" card. Needs _followup_card_context(); renders its own forms (keep outside other forms). #}
+{% if followup_card %}
+<div class="card widget" id="followup-card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-calendar-check text-success"></i> Next follow-up</span>
+    <a class="small" href="{% url 'followup_list' %}">All follow-ups</a>
+  </div>
+  <div class="card-body">
+    {% if active_followup %}
+      {% with f=active_followup %}
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+        <div>
+          <div class="fs-5 fw-semibold">{{ f.scheduled_date|date:"D, d M Y" }}{% if f.scheduled_time %} <span class="text-muted fs-6">{{ f.scheduled_time|time:"H:i" }}</span>{% endif %}</div>
+          <span class="badge {% if f.is_overdue %}text-bg-danger{% else %}text-bg-success{% endif %}">{% if f.is_overdue %}Overdue{% else %}{{ f.get_status_display }}{% endif %}</span>
+          {% if f.scheduled_by %}<span class="small text-muted">by {{ f.scheduled_by }}</span>{% endif %}
+          {% if show_followup_notes and f.notes %}<div class="small mt-1"><i class="bi bi-sticky"></i> {{ f.notes|linebreaksbr }}</div>{% endif %}
+        </div>
+        {% include "partials/followup_actions.html" with next=request.get_full_path %}
+      </div>
+      {% endwith %}
+    {% else %}
+      <div class="text-muted small mb-2">No follow-up scheduled.</div>
+    {% endif %}
+
+    {% if schedule_form %}
+    <details {% if not active_followup %}open{% endif %}>
+      <summary class="small fw-semibold text-primary mb-2">{% if active_followup %}Schedule a different follow-up{% else %}Schedule follow-up{% endif %}</summary>
+      <form method="post" action="{% url 'followup_schedule' patient.pk %}" class="row g-2 align-items-end"
+            data-existing-followup="{% if active_followup %}{{ active_followup.scheduled_date|date:'d-M-Y' }}{% endif %}">{% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        {% if followup_source_visit %}<input type="hidden" name="source_visit" value="{{ followup_source_visit.pk }}">{% endif %}
+        {{ schedule_form.replace }}
+        <div class="col-sm-5">
+          <label class="form-label small mb-0" for="{{ schedule_form.scheduled_date.id_for_label }}">Date <span class="text-danger">*</span></label>
+          {{ schedule_form.scheduled_date }}
+        </div>
+        <div class="col-sm-3">
+          <label class="form-label small mb-0" for="{{ schedule_form.scheduled_time.id_for_label }}">Time</label>
+          {{ schedule_form.scheduled_time }}
+        </div>
+        <div class="col-sm-4 d-grid"><button class="btn btn-sm btn-success"><i class="bi bi-calendar-plus"></i> Schedule</button></div>
+        <div class="col-12">
+          {% for label, iso in quick_picks %}<button type="button" class="btn btn-sm btn-outline-secondary me-1 mb-1" data-pick-date="{{ iso }}" data-target="#{{ schedule_form.scheduled_date.id_for_label }}">{{ label }}</button>{% endfor %}
+        </div>
+        {% if schedule_form.notes %}
+        <div class="col-12">
+          <label class="form-label small mb-0" for="{{ schedule_form.notes.id_for_label }}">Notes for the doctor</label>
+          {{ schedule_form.notes }}
+        </div>
+        {% endif %}
+      </form>
+    </details>
+    {% endif %}
+
+    {% if followup_history %}
+    <div class="small text-muted mt-3 mb-1">Earlier follow-ups</div>
+    <ul class="list-unstyled small mb-0">
+      {% for f in followup_history %}
+      <li>{{ f.scheduled_date|date:"d-M-Y" }} — <span class="badge text-bg-light border">{{ f.get_status_display }}</span></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

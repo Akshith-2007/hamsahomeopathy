@@ -7,15 +7,20 @@ RBAC decision in accounts.rbac and out of the template.
 from django.db import transaction
 
 from accounts.models import Role
-from accounts.rbac import role_of, section_access
+from accounts.rbac import can_edit, can_view, role_of, section_access
+from core.models import AuditLog
 from core.validators import document_validators, image_validators, run_validators
 
 from . import forms as f
 from . import models as m
+from . import pharmacy, services
+from .family import family_history, new_information, summary_text
+from .prefill import STABLE_SECTIONS, latest_history, source_label
 
-# section key -> (form class, model) for one-to-one visit sections
+# rbac section -> (form class, model) for one-to-one visit sections
 SIMPLE_SECTIONS = {
     "case_history": (f.CaseHistoryForm, m.CaseHistory),
+    "followup_assessment": (f.FollowUpNoteForm, m.FollowUpNote),
     "physical_generals": (f.PhysicalGeneralForm, m.PhysicalGeneral),
     "mental_generals": (f.MentalGeneralForm, m.MentalGeneral),
     "examination": (f.ExaminationForm, m.Examination),
@@ -46,6 +51,13 @@ class CaseRecord:
         self.forms = {}
         self.formsets = {}
         self.upload_errors = {}
+        self.notes = []      # extra success messages for the view
+        self.warnings = []   # business-rule refusals (e.g. nothing to send)
+        self.prefill = {}    # section -> {field: (value, source visit or None for family records)}
+        self.history_values = {}  # section -> {field: (value, source visit)} for "Refresh from history"
+        self.family_entries = None
+        self.family_autofill_text = ""
+        self.family_new_info = ""
         self._build()
 
     # ------------------------------------------------------------------ build
@@ -82,10 +94,17 @@ class CaseRecord:
     def _build(self):
         visit = self.visit
         self.forms["patient"] = self._form("patient", f.PatientForm, self.patient)
+        self.original_visit_type = visit.visit_type
         self.forms["visit"] = self._form("visit", f.VisitForm, visit)
+        if self.forms["visit"] is not None and not can_edit(self.user, "visit_type"):
+            self.forms["visit"].fields["visit_type"].disabled = True
+        instances = {}
         for section, (form_class, model) in SIMPLE_SECTIONS.items():
-            instance = visit.section(section) or model(visit=visit)
-            self.forms[section] = self._form(section, form_class, instance)
+            related_name = model._meta.get_field("visit").remote_field.related_name
+            instances[section] = visit.section(related_name) or model(visit=visit)
+        self._apply_prefill(instances)
+        for section, (form_class, model) in SIMPLE_SECTIONS.items():
+            self.forms[section] = self._form(section, form_class, instances[section])
 
         self.investigation = visit.investigations.first() or m.Investigation(visit=visit)
         self.forms["investigations"] = self._form("investigations", f.InvestigationForm, self.investigation)
@@ -105,6 +124,50 @@ class CaseRecord:
         self.formsets["followups"] = self._formset(
             "followups", m.FollowUp, m.Visit, f.FollowUpForm, visit, "fu", "followups"
         )
+
+    # ------------------------------------------------------------ pre-fill
+    @property
+    def prefill_open(self):
+        """Pre-fill only applies to visits still in progress; completed records are never rewritten."""
+        return self.visit.status != m.Visit.Status.COMPLETED
+
+    def _apply_prefill(self, instances):
+        """Copy stable history (own earlier visits, then linked relatives) into empty fields of unsaved values.
+
+        Only touches in-memory instances: nothing is written unless the user saves.
+        """
+        editable = [s for s in STABLE_SECTIONS if self.access[s]["edit"]]
+        if editable and can_view(self.user, "history_prefill"):
+            self.history_values = latest_history(self.patient, self.visit, sections=editable)
+            if self.prefill_open:
+                for section, values in self.history_values.items():
+                    instance = instances[section]
+                    for name, (value, source) in values.items():
+                        if getattr(instance, name) in (None, ""):
+                            setattr(instance, name, value)
+                            self.prefill.setdefault(section, {})[name] = (value, source)
+
+        case = instances["case_history"]
+        if can_view(self.user, "family_history") and self.access["case_history"]["edit"]:
+            self.family_entries = family_history(self.patient)
+            text = summary_text(self.family_entries)
+            if not case.family_history and text and self.prefill_open:
+                case.family_history = text
+                self.family_autofill_text = text
+                self.prefill.setdefault("case_history", {})["family_history"] = (text, None)
+            elif case.family_history and text:
+                self.family_new_info = new_information(self.family_entries, case.family_history)
+
+    def prefill_payload(self):
+        """JSON for the page: {input name: {value, label, prefilled}} plus the sections that support refresh."""
+        fields = {}
+        for section, values in self.history_values.items():
+            for name, (value, source) in values.items():
+                fields[f"{section}-{name}"] = {"value": value, "label": source_label(source), "prefilled": False}
+        for section, values in self.prefill.items():
+            for name, (value, source) in values.items():
+                fields[f"{section}-{name}"] = {"value": value, "label": source_label(source), "prefilled": True}
+        return {"fields": fields, "sections": sorted({key.split("-", 1)[0] for key in fields})}
 
     # ------------------------------------------------------------- validate
     def _editable(self, section, obj):
@@ -146,11 +209,16 @@ class CaseRecord:
         visit = self.visit
         for section in ("patient", "visit", *SIMPLE_SECTIONS, "investigations"):
             form = self.forms.get(section)
-            if self._editable(section, form) and form.has_changed():
+            if not self._editable(section, form):
+                continue
+            # Pre-filled history counts as entered data: it is stored when the user saves.
+            if form.has_changed() or section in self.prefill:
                 if section == "investigations" and form.instance.pk is None and not form.cleaned_data.get("request_notes"):
                     continue  # don't create an empty investigation request
+                self._record_prefill_sources(section, form)
                 form.save()
 
+        prescription_changed = False
         for section, parent_attr in (("repertory", "repertory"), ("prescription", "prescription")):
             form, formset = self.forms.get(section), self.formsets.get(section)
             if not self._editable(section, form):
@@ -160,13 +228,69 @@ class CaseRecord:
                 setattr(self, parent_attr, parent)
                 formset.instance = parent
                 formset.save()
+                prescription_changed |= section == "prescription" and formset.has_changed()
 
         followups = self.formsets.get("followups")
         if self._editable("followups", followups):
             followups.save()
 
         self._save_uploads()
+
+        if visit.visit_type != self.original_visit_type:
+            services.record_visit_type_change(visit, self.original_visit_type, self.user)
+        if self.request.POST.get("complete") and can_edit(self.user, "consultation"):
+            services.set_visit_status(visit, m.Visit.Status.COMPLETED)
+        self._pharmacy(prescription_changed)
+        case_form = self.forms.get("case_history")
+        if (self.request.POST.get("family_history_inserted") == "1" and can_edit(self.user, "family_history")
+                and self._editable("case_history", case_form) and "family_history" in case_form.changed_data):
+            AuditLog.record(AuditLog.Action.FAMILY_HISTORY_INSERTED, case_form.instance, user=self.user,
+                            changes={"patient": self.patient.pk})
         return visit
+
+    def _record_prefill_sources(self, section, form):
+        """Remember which earlier visit each kept pre-filled value came from, and audit it."""
+        values = self.prefill.get(section)
+        if not values:
+            return
+        cleaned = getattr(form, "cleaned_data", {}) or {}
+        sources, family_kept = {}, False
+        for name, (value, source) in values.items():
+            current = cleaned.get(name, getattr(form.instance, name))
+            if str(current or "") != str(value or ""):
+                continue  # edited by the user: no longer a pre-filled value
+            if source is None:
+                family_kept = True
+                sources[name] = "family"
+            else:
+                sources[name] = source.pk
+        if sources:
+            form.instance.prefill_sources = {**(form.instance.prefill_sources or {}), **sources}
+            visit_sources = {k: v for k, v in sources.items() if v != "family"}
+            if visit_sources:
+                AuditLog.record(AuditLog.Action.HISTORY_PREFILLED, self.visit, user=self.user,
+                                changes={"section": section, "source_visits": visit_sources})
+        if family_kept:
+            AuditLog.record(AuditLog.Action.FAMILY_HISTORY_AUTOFILLED, self.visit, user=self.user,
+                            changes={"relatives": [e.relative.pk for e in self.family_entries or []]})
+
+    def _pharmacy(self, prescription_changed):
+        send = self.request.POST.get("send_to_pharmacy")
+        if send and can_edit(self.user, "pharmacy_send"):
+            if self.prescription.pk is None:
+                self.warnings.append("Add at least one medicine before sending the prescription to the pharmacy.")
+                return
+            try:
+                order, created = pharmacy.send_to_pharmacy(self.prescription, self.user, keep_open=send == "keep_open")
+            except services.WorkflowError as exc:
+                self.warnings.append(str(exc))
+            else:
+                self.notes.append(f"Prescription sent to the pharmacy (version {order.version})." if created
+                                  else "The pharmacy already has this prescription.")
+        elif prescription_changed and can_edit(self.user, "pharmacy_send"):
+            order = pharmacy.sync_after_edit(self.prescription, self.user)
+            if order is not None:
+                self.notes.append(f"Updated prescription sent to the pharmacy (version {order.version}).")
 
     def _save_uploads(self):
         files = self.request.FILES

@@ -117,11 +117,114 @@
         body.innerHTML = `<div class="alert alert-danger">Could not load visit details (${err.message}).</div>`;
       }
     };
-    document.querySelectorAll(".history-row[data-summary-url]").forEach((row) => {
-      row.addEventListener("click", () => openRow(row));
-      row.addEventListener("keydown", (e) => { if (e.key === "Enter") openRow(row); });
+    // Grid rows and "View full visit" buttons (previous prescriptions, timeline).
+    document.addEventListener("click", (e) => {
+      const trigger = e.target.closest("[data-summary-url]");
+      if (trigger) openRow(trigger);
+    });
+    document.addEventListener("keydown", (e) => {
+      const row = e.target.closest(".history-row[data-summary-url]");
+      if (row && e.key === "Enter") openRow(row);
     });
   }
+
+  /* ------------------------------------------------ family history insert */
+  // Copies the relatives' summary into THIS patient's family-history field only; the doctor edits and saves.
+  document.querySelectorAll("[data-insert-family]").forEach((btn) => btn.addEventListener("click", () => {
+    const field = document.querySelector(btn.dataset.target);
+    if (!field) return;
+    const text = btn.dataset.insertFamily;
+    field.value = field.value.trim() ? `${field.value.trim()}\n${text}` : text;
+    const flag = document.getElementById("family-history-inserted");
+    if (flag) flag.value = "1";
+    field.focus();
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  }));
+  document.querySelectorAll("[data-dismiss-target]").forEach((btn) => btn.addEventListener("click", () => {
+    document.querySelector(btn.dataset.dismissTarget)?.classList.add("d-none");
+  }));
+
+  /* ------------------------------------------- history pre-fill markers */
+  // Pre-filled values are only saved when the form is saved; the tag disappears once a field is edited.
+  const prefillData = (() => {
+    const el = document.getElementById("history-prefill");
+    try { return el ? JSON.parse(el.textContent) : null; } catch (e) { return null; }
+  })();
+  const markPrefilled = (input, label) => {
+    clearMark(input);
+    input.classList.add("prefilled");
+    const tag = document.createElement("div");
+    tag.className = "prefill-tag";
+    tag.innerHTML = `<i class="bi bi-clock-history"></i> ${label.replace(/[&<>"']/g, "")}`;
+    input.insertAdjacentElement("afterend", tag);
+    const clear = () => clearMark(input);
+    input.addEventListener("input", clear, { once: true });
+    input.addEventListener("change", clear, { once: true });
+  };
+  function clearMark(input) {
+    input.classList.remove("prefilled");
+    if (input.nextElementSibling?.classList.contains("prefill-tag")) input.nextElementSibling.remove();
+  }
+  if (prefillData) {
+    Object.entries(prefillData.fields).forEach(([name, info]) => {
+      const input = document.querySelector(`#case-record [name="${name}"]`);
+      if (input && info.prefilled && !input.disabled) markPrefilled(input, info.label);
+    });
+    // Per-section "Refresh from history" / "Clear".
+    prefillData.sections.forEach((section) => {
+      const body = document.querySelector(`#body-${section} .sec-body`);
+      if (!body || body.querySelector("[data-prefill-tools]")) return;
+      const bar = document.createElement("div");
+      bar.className = "d-flex justify-content-end gap-1 mb-2";
+      bar.dataset.prefillTools = section;
+      bar.innerHTML = `<button type="button" class="btn btn-sm btn-outline-secondary" data-refresh><i class="bi bi-arrow-repeat"></i> Refresh from history</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-clear><i class="bi bi-eraser"></i> Clear</button>`;
+      body.prepend(bar);
+      // Only the stable-history fields (never this visit's own complaint, etc.).
+      const inputs = () => Object.keys(prefillData.fields).filter((name) => name.startsWith(`${section}-`))
+        .map((name) => body.querySelector(`[name="${name}"]`)).filter((input) => input && !input.disabled);
+      bar.querySelector("[data-refresh]").addEventListener("click", () => {
+        Object.entries(prefillData.fields).forEach(([name, info]) => {
+          if (!name.startsWith(`${section}-`)) return;
+          const input = body.querySelector(`[name="${name}"]`);
+          if (!input || input.disabled) return;
+          input.value = info.value;
+          markPrefilled(input, info.label);
+        });
+        markDirty();
+      });
+      bar.querySelector("[data-clear]").addEventListener("click", () => {
+        inputs().forEach((input) => {
+          if (input.type === "radio" || input.type === "checkbox") input.checked = false;
+          else input.value = "";
+          clearMark(input);
+        });
+        markDirty();
+      });
+    });
+  }
+
+  /* ---------------------------------------------------------- timeline */
+  document.querySelectorAll("[data-timeline-filter]").forEach((bar) => {
+    const items = bar.parentElement.querySelectorAll(".timeline-item");
+    const start = bar.querySelector("[data-filter-start]");
+    const end = bar.querySelector("[data-filter-end]");
+    const apply = () => items.forEach((item) => {
+      const date = item.dataset.date;
+      const hidden = (start.value && date < start.value) || (end.value && date > end.value);
+      item.classList.toggle("d-none", Boolean(hidden));
+    });
+    start.addEventListener("change", apply);
+    end.addEventListener("change", apply);
+    bar.querySelector("[data-filter-clear]").addEventListener("click", () => { start.value = ""; end.value = ""; apply(); });
+    bar.querySelectorAll("[data-timeline-expand]").forEach((btn) => btn.addEventListener("click", () => {
+      const show = btn.dataset.timelineExpand === "1";
+      items.forEach((item) => {
+        const body = item.querySelector(".collapse");
+        bootstrap.Collapse.getOrCreateInstance(body, { toggle: false })[show ? "show" : "hide"]();
+      });
+    }));
+  });
 
   /* ----------------------------------------------------- repertory chart */
   const repTable = document.getElementById("rep-table");

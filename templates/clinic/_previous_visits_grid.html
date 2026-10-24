@@ -1,0 +1,19 @@
+{# Previous-visit grid; rows open the visit modal. Clinical columns only when the role may view them. #}
+<div class="table-responsive">
+  <table class="table table-sm table-hover grid-table mb-0">
+    <thead><tr><th>Visit date</th><th>Type</th><th>Doctor</th>{% if access.diagnosis.view %}<th>Diagnosis</th>{% endif %}{% if access.prescription.view %}<th>Prescription summary</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for h in previous_visits %}
+      <tr class="history-row" data-summary-url="{% url 'visit_summary' h.pk %}" data-record-url="{% url 'visit_record' h.pk %}" tabindex="0">
+        <td class="text-nowrap">{{ h.visit_date|date:"d-M-Y" }}</td>
+        <td>{{ h.get_visit_type_display }} {% with v=h %}{% if v.consultation_mode == 'THROUGH_FAMILY' %}<span class="badge text-bg-warning" title="Reported by {{ v.reported_by.full_name }}"><i class="bi bi-telephone-forward"></i> Through family</span>{% endif %}{% endwith %}</td>
+        <td>{{ h.doctor|default:"—" }}</td>
+        {% if access.diagnosis.view %}<td>{% firstof h.diagnosis.final h.diagnosis.provisional h.diagnosis.differential "—" %}</td>{% endif %}
+        {% if access.prescription.view %}<td class="small">{% for rx in h.prescriptions.all %}{% for i in rx.items.all %}{{ i.medicine_name }} {{ i.potency }}{% if not forloop.last %}, {% endif %}{% endfor %}{% empty %}—{% endfor %}</td>{% endif %}
+      </tr>
+    {% empty %}
+      <tr><td colspan="5" class="text-muted small text-center py-3">This is the patient's first visit.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>

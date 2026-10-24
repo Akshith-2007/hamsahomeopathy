@@ -1,0 +1,9 @@
+{# Corrected-report upload for report `r` (inline collapse; the old version is kept as superseded). #}
+<button class="btn btn-sm btn-outline-warning" type="button" data-bs-toggle="collapse" data-bs-target="#correct-{{ r.pk }}"><i class="bi bi-pencil-square"></i> Correct</button>
+<form method="post" action="{% url 'report_correct' r.pk %}" enctype="multipart/form-data" class="collapse mt-2 text-start" id="correct-{{ r.pk }}"
+      data-confirm="Upload a corrected version? The current file is kept as superseded and the doctor is notified.">{% csrf_token %}
+  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <input type="file" name="report_files" class="form-control form-control-sm mb-1" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" required>
+  <input name="remarks" class="form-control form-control-sm mb-1" placeholder="What was corrected?">
+  <button class="btn btn-sm btn-warning">Upload corrected report</button>
+</form>

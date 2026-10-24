@@ -1,31 +1,35 @@
 {% extends "base.html" %}
-{% block title %}{% if followup_mode %}Add follow-up{% else %}Find patient{% endif %}{% endblock %}
+{% block title %}{% if mode == 'followup' %}Follow-up check-in{% elif mode == 'newcase' %}New case check-in{% else %}Find patient{% endif %}{% endblock %}
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
   <h1 class="h4 mb-0">
-    {% if followup_mode %}<i class="bi bi-calendar-plus text-purple"></i> Add follow-up visit{% else %}<i class="bi bi-search"></i> Find patient{% endif %}
+    {% if mode == 'followup' %}<i class="bi bi-arrow-repeat text-primary"></i> Follow-up check-in
+    {% elif mode == 'newcase' %}<i class="bi bi-file-earmark-plus text-success"></i> New case for an existing patient
+    {% else %}<i class="bi bi-search"></i> Find patient{% endif %}
   </h1>
-  {% if can_register %}<a class="btn btn-success" href="{% url 'patient_create' %}"><i class="bi bi-person-plus"></i> New patient</a>{% endif %}
+  {% if can_checkin %}<a class="btn btn-success" href="{% url 'patient_create' %}"><i class="bi bi-person-plus"></i> New patient</a>{% endif %}
 </div>
 
 <form method="get" class="mb-3">
-  {% if followup_mode %}<input type="hidden" name="mode" value="followup">{% endif %}
+  {% if mode %}<input type="hidden" name="mode" value="{{ mode }}">{% endif %}
   <div class="input-group input-group-lg">
     <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
     {{ form.q }}
     <button class="btn btn-primary">Search</button>
   </div>
-  {% if followup_mode %}<div class="form-text">Find the patient, then click <strong>Start follow-up</strong>. The last visit's case details are carried forward.</div>{% endif %}
+  {% if mode == 'followup' %}<div class="form-text">The previous visit's case history and generals are carried forward, and a scheduled follow-up is marked completed.</div>
+  {% elif mode == 'newcase' %}<div class="form-text">Starts an empty case sheet. The doctor still sees the patient's full history.</div>{% endif %}
 </form>
 
 <div class="card border-0 shadow-sm">
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0">
       <thead class="table-light">
-        <tr><th>OPD No.</th><th>Name</th><th>Age / Sex</th><th>Mobile</th><th>Registered</th><th class="text-center">Visits</th><th></th></tr>
+        <tr><th>OPD No.</th><th>Name</th><th>Age / Sex</th><th>Mobile</th><th>Registered</th><th class="text-center">Visits</th><th>Next follow-up</th><th></th></tr>
       </thead>
       <tbody>
       {% for p in page %}
+        {% with active=p.active_followups.0 %}
         <tr>
           <td class="fw-semibold">{{ p.opd_number }}</td>
           <td><a href="{% url 'patient_detail' p.pk %}" class="text-decoration-none">{{ p.full_name }}</a></td>
@@ -33,18 +37,26 @@
           <td>{{ p.phone }}</td>
           <td>{{ p.registration_date|date:"d-M-Y" }}</td>
           <td class="text-center">{{ p.visit_count }}</td>
+          <td>{% if active %}<span class="badge {% if active.is_overdue %}text-bg-danger{% else %}text-bg-success{% endif %}">{{ active.scheduled_date|date:"d M" }}{% if active.scheduled_time %} {{ active.scheduled_time|time:"H:i" }}{% endif %}</span>{% else %}<span class="text-muted small">—</span>{% endif %}</td>
           <td class="text-end text-nowrap">
-            {% if followup_mode and can_register %}
-              <form method="post" action="{% url 'visit_create' p.pk %}" class="d-inline">{% csrf_token %}
-                <button class="btn btn-sm btn-outline-primary"><i class="bi bi-calendar-plus"></i> Start follow-up</button>
+            {% if mode and can_checkin %}
+              <form method="post" action="{% url 'checkin_start' p.pk %}" class="d-inline">{% csrf_token %}
+                <input type="hidden" name="visit_type" value="{% if mode == 'followup' %}FOLLOW_UP{% else %}NEW{% endif %}">
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <div class="btn-group btn-group-sm">
+                  <button class="btn btn-outline-primary" name="open" value="0" title="Check in; the case sheet can be filled later">
+                    <i class="bi bi-door-open"></i> {% if mode == 'followup' %}Check in{% else %}Start new case{% endif %}</button>
+                  <button class="btn btn-primary" name="open" value="1" title="Check in and open the case sheet"><i class="bi bi-file-medical"></i> &amp; open sheet</button>
+                </div>
               </form>
             {% else %}
               <a class="btn btn-sm btn-outline-secondary" href="{% url 'patient_detail' p.pk %}">Open</a>
             {% endif %}
           </td>
         </tr>
+        {% endwith %}
       {% empty %}
-        <tr><td colspan="7" class="text-center text-muted py-4">{% if q %}No patients match “{{ q }}”.{% else %}No patients registered yet.{% endif %}</td></tr>
+        <tr><td colspan="8" class="text-center text-muted py-4">{% if q %}No patients match “{{ q }}”.{% else %}No patients registered yet.{% endif %}</td></tr>
       {% endfor %}
       </tbody>
     </table>

@@ -6,3 +6,4 @@ psycopg[binary]==3.2.3
 Pillow==11.0.0
 whitenoise==6.8.2
 gunicorn==23.0.0
+waitress==3.0.2  # Windows-friendly production server for local Wi-Fi hosting

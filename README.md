@@ -37,6 +37,19 @@ To use PostgreSQL locally, leave `DB_ENGINE` unset and set the `POSTGRES_*` vari
 
 Run the tests with `DB_ENGINE=sqlite python manage.py test`.
 
+### Use it from other devices on the same Wi-Fi
+
+```powershell
+$env:DB_ENGINE="sqlite"; $env:DJANGO_DEBUG="true"; $env:DJANGO_ALLOW_LAN="true"
+python manage.py runserver 0.0.0.0:5000
+```
+
+`DJANGO_ALLOW_LAN=true` adds this PC's current IP addresses and hostname to `ALLOWED_HOSTS`. Other phones, tablets and PCs on the Wi-Fi then open `http://<this-PC's-IP>:5000`. Find the IP with `ipconfig` (the "Wi-Fi → IPv4 Address" line).
+
+* Windows Firewall must allow Python inbound on **Private** networks, and the Wi-Fi must be marked Private.
+* Some routers enable "AP / client isolation", which blocks devices on the same network from reaching each other.
+* `DJANGO_DEBUG=true` shows error details to anyone on the network. For day-to-day clinic use, run with debug off and a real `DJANGO_SECRET_KEY`.
+
 ---
 
 ## Docker Compose
@@ -63,7 +76,7 @@ The manifests in [k8s/](k8s/) work on Docker Desktop Kubernetes, minikube, kind 
 | `20-media-pvc.yaml` | 10 Gi PersistentVolumeClaim for uploaded documents/images |
 | `30-web-deployment.yaml` | Django/Gunicorn Deployment; init container runs migrations; liveness `/healthz`, readiness `/readyz` |
 | `31-web-service.yaml` | NodePort Service on **30080** |
-| `40-followup-reminders-cronjob.yaml` | Daily follow-up reminder job (SMS/WhatsApp, disabled by default) |
+| `40-followup-reminders-cronjob.yaml` | Daily job: mark missed follow-ups, then send reminders (SMS/WhatsApp, disabled by default) |
 
 ### 1. Build the image where the cluster can see it
 
@@ -120,112 +133,294 @@ If you use another hostname or port, add it to `DJANGO_ALLOWED_HOSTS` and
 
 ## Roles and access
 
-The rules live in a single table, [accounts/rbac.py](accounts/rbac.py). Both the HTML screens and the REST API use it.
+Every rule lives in one table, [accounts/rbac.py](accounts/rbac.py) (`SECTION_RULES`). HTML views use `section_required` / `can_view` / `can_edit`, templates use the `nav` flags, and the API uses `SectionPermission` / `section_permission`. Nothing checks role names directly.
 
-| Section | Admin | Doctor | Attender | Lab |
+| Section / screen | Admin | Doctor | Reception (Attender) | Lab |
 |---|---|---|---|---|
-| Patient details / photo | edit | edit | edit | view |
-| Case history, Physical generals | edit | edit | view | view |
+| Patient identity (OPD No., name, age, sex) | view | view | view | view |
+| Patient contact details, address, photo | edit | edit | edit | hidden |
+| Check-in (New case / Follow-up) | ✔ | ✔ | ✔ | – |
+| Change visit type after check-in | ✔ | ✔ | – | – |
+| Full case sheet screen | ✔ | ✔ | ✔ | redirected to lab view |
+| Previous-visit grid and modal | view | view | view (no diagnosis/prescription columns) | hidden |
+| **Patient history: summary bar, timeline, previous prescriptions, repeat prescription** | ✔ | ✔ | hidden | hidden |
+| Case history, Physical generals | edit | edit | view | hidden |
 | **Mental generals** | edit | edit | hidden | hidden |
-| Physical examination | edit | edit | edit | view |
-| Diagnosis | edit | edit | hidden | view |
-| Investigations (request) | edit | edit | edit | view |
-| Investigation reports (upload) | edit | edit | upload | **upload** |
-| Past treatment | edit | edit | edit | view |
+| Follow-up assessment (changes since last visit) | edit | edit | hidden | hidden |
+| Physical examination | edit | edit | edit | hidden |
+| Diagnosis | edit | edit | hidden | hidden |
+| Investigations requested | edit | edit | edit | view |
+| Investigation reports | all | all | all, upload | **upload; sees lab-produced reports only** |
+| Past treatment | edit | edit | edit | hidden |
 | Before/after images | edit | edit | view | hidden |
 | Repertory analysis | edit | edit | hidden | hidden |
-| **Prescription** | edit | edit | hidden | hidden |
-| Follow-up history | edit | edit | hidden | hidden |
-| Delete patients / visits | ✔ | – | – | – |
-| Remove uploads / grid rows | ✔ | ✔ | – | – |
+| **Prescription (full section)** | edit | edit | hidden | hidden |
+| Follow-up progress notes | edit | edit | hidden | hidden |
+| Schedule / reschedule / cancel follow-ups | ✔ | ✔ | ✔ (date, time, status only) | hidden |
+| Follow-up clinical notes | ✔ | ✔ | hidden | hidden |
+| **Family links** (manual and auto-linked): see name, OPD No., relationship, "via"; add, edit, confirm, remove | ✔ | ✔ | ✔ | hidden |
+| Undo a rejected auto-link | ✔ | – | – | – |
+| **History pre-fill** from the patient's own earlier visits | ✔ | ✔ | only in sections they can edit | – |
+| **Past history summary, family history panel and auto-fill** | ✔ | ✔ | hidden | hidden |
+| **Consult & prescribe for a family member** (through family) | ✔ | ✔ | – | – |
+| **Send to pharmacy** | ✔ | ✔ | – | – |
+| **Pharmacy queue and order items** (incl. "collect by" orders) | ✔ | status only (case record, today's patients) | ✔ items only | hidden |
+| Update dispense status, print labels | ✔ | – | ✔ | – |
+| Notification bell | ✔ | ✔ | ✔ | hidden |
+| **Lab dashboard** (the lab's home page) | ✔ | – | – | ✔ |
+| **Previous reports, per-patient report history** | ✔ | ✔ | – | ✔ (investigation data only) |
+| Upload a corrected report | ✔ | ✔ | – | ✔ |
+| Superseded report versions | ✔ | ✔ | – | – |
+| Reports, CSV export | ✔ | ✔ | – | – |
 | Users, audit log | ✔ | – | – | – |
-| Reports | ✔ | ✔ | – | – |
+| Delete patients / visits / reports | ✔ | – | – | – |
 
-* **Hidden sections are never rendered or serialised.** A section the user can only view renders with disabled inputs. On save, the server ignores any section the user cannot edit, even if the browser posts data for it.
-* **Default expansion when a record opens:**
-  * Doctor and Admin: Patient, Case history, **Mental generals**, Diagnosis and **Prescription** are open.
-  * Attender: Patient, Examination and Investigations are open.
-  * Lab: Patient and Investigations are open.
-  * Every section can be expanded or collapsed. The sticky bar at the bottom has *Expand all* and *Collapse all*.
-* **Lab uploads:** a lab assistant's upload is tagged `LAB` and marks the investigation *Completed*. It then drops off the dashboard's *Pending lab reports* list.
-* **Uploaded files:** files are served only through an authenticated view that applies the same section rules. A lab user cannot fetch a repertory sheet by guessing its URL, and file names are random UUIDs.
+* **Hidden sections are never rendered or serialised**, and the server ignores posted data for any section the user cannot edit.
+* **Default expansion:**
+  * Doctor and Admin: Patient, Case history, Mental generals, Diagnosis, Prescription, *Previous prescriptions*, the follow-up comparison and the family-history panel are open.
+  * Reception: Patient, Examination and Investigations are open.
+* **Uploaded files** are served through an authenticated view that applies the same rules, down to individual reports for the lab.
 
 ## Main screens
 
-| Screen | URL |
-|---|---|
-| Home: launcher tiles (Dashboard, New patient, Add follow-up, Find patient, Reports) and widgets (today's patients, upcoming follow-ups, pending lab reports, recent prescriptions) | `/` |
-| Find patient (search by OPD No., name or mobile) | `/patients/` |
-| Add follow-up (search → start follow-up visit; the previous visit's case history and generals are carried forward) | `/patients/?mode=followup` |
-| Register patient (OPD No. is generated automatically as `OPD-YYYY-NNNNN`) | `/patients/new/` |
-| Case record for a visit. A collapsible *Previous visit history* grid sits at the top; clicking a row opens a modal with that visit's case history, generals, diagnosis, prescription, investigations and follow-up notes, filtered by role | `/visits/<id>/` |
-| Printable prescription (print or save as PDF; uses the doctor's signature image if uploaded) | `/visits/<id>/prescription/` |
-| Reports with CSV export | `/reports/` |
-| User management (create, edit, reset password, lock/unlock, delete) | `/accounts/users/` |
-| Audit log | `/audit/` |
-| Swagger UI / ReDoc / OpenAPI schema | `/api/docs/`, `/api/redoc/`, `/api/schema/` |
+| Screen | URL | Who |
+|---|---|---|
+| Home: launcher tiles; today's patients (waiting first, with New/Follow-up, consultation status and pharmacy status); upcoming follow-ups (overdue, today, next 7 days); pharmacy widget; pending lab reports; recent prescriptions | `/` | Admin, Doctor, Reception |
+| **Check-in**: choose New case or Follow-up | `/checkin/` | Admin, Doctor, Reception |
+| Register a new patient (*Save patient only* or *Save & fill case sheet*, plus linking family members) | `/patients/new/` | Admin, Doctor, Reception |
+| Find patient; new case for an existing patient; follow-up check-in | `/patients/`, `?mode=newcase`, `?mode=followup` | Admin, Doctor, Reception |
+| Patient page: check-in menu, next follow-up card, **family members** | `/patients/<id>/` | Admin, Doctor, Reception |
+| **Case record**: summary bar, previous visits and timeline tabs, follow-up comparison, family-history panel, previous prescriptions with *Repeat*, prescription with *Send to pharmacy* and order status, follow-up scheduling | `/visits/<id>/` | Admin, Doctor (Reception sees its own sections) |
+| Full-page patient history (timeline, date filter) | `/patients/<id>/history/` | Admin, Doctor |
+| Follow-ups list | `/followups/` | Admin, Doctor, Reception |
+| **Pharmacy queue** (New → Preparing → Ready → Dispensed today; designed for tablets) | `/pharmacy/` | Admin, Reception |
+| Dispensing slip (A4) / labels (62×40 mm) | `/pharmacy/orders/<id>/label/` (`?size=label`) | Admin, Reception |
+| **Lab dashboard**: counts, pending reports with in-place upload, recently completed. This is the lab's `/` | `/lab/` (also `/` for lab users) | Admin, Lab |
+| Lab visit view (a single visit's investigations) | `/lab/visits/<id>/` | Admin, Lab |
+| **Previous reports** (filters: date, test, uploaded by, patient) and **per-patient report history**; corrected uploads | `/lab/reports/`, `/lab/patients/<id>/reports/` | Admin, Doctor, Lab |
+| Printable prescription | `/visits/<id>/prescription/` | Admin, Doctor |
+| Reports, users, audit log | `/reports/`, `/accounts/users/`, `/audit/` | as in the table above |
+| Swagger UI / ReDoc / OpenAPI schema | `/api/docs/`, `/api/redoc/`, `/api/schema/` | signed-in users |
 
-**Repertory chart.** Enter remedies against each rubric as `Nux-v:3, Sulph:2`. *Generate Chart* builds the repertorisation grid: the top 8 remedies, colour-coded by grade. You can sort it by weighted total (remedy grade × rubric grade) or by the number of rubrics covered.
+## Workflows
+
+### Check-in (reception)
+
+1. **New case**
+   * **New patient:** register them. *Save patient only* creates today's `NEW` / `WAITING` visit with no case-sheet rows. *Save & fill case sheet* opens the case sheet.
+   * **Existing patient, new complaint:** search, then *Start new case*. This gives an empty case sheet; the doctor still sees the full history.
+2. **Follow-up:** search for the patient (any scheduled follow-up is shown), then *Check in*. The new visit:
+   * is linked to the previous visit;
+   * carries forward the case history and generals;
+   * adds a follow-up assessment section;
+   * marks the scheduled follow-up `COMPLETED`.
+
+Opening a `WAITING` visit as a doctor moves it to `IN_CONSULTATION`. *Save & complete consultation* or *Send to pharmacy* sets it to `COMPLETED`.
+
+### Follow-up scheduling
+
+* **Doctors and reception** can schedule from the case record or the patient page, with quick picks of 1 week, 2 weeks, 1 month and 3 months. They can reschedule, cancel or check in from the dashboard and the follow-ups list.
+* **One active follow-up per patient.** This is enforced by a database constraint, and replacing an existing one asks for confirmation.
+* **Daily jobs:** `mark_missed_followups` marks past-date follow-ups as `MISSED`. `send_followup_reminders` handles SMS/WhatsApp, which is disabled by default. Both run from the Kubernetes CronJob.
+
+### Family links and family history
+
+* **Linking relatives:**
+  * At registration, *"Are any family members already registered with us?"* → search by mobile, name or OPD No. The mobile number just typed is looked up automatically, and matches are offered to link.
+  * Links can also be added, edited or removed later from the patient page.
+* **Two-way links:** each link is stored in both directions. "Lakshmi is Ravi's Mother" automatically adds "Ravi is Lakshmi's Son", using Ravi's sex. If sex is unknown the reverse is neutral (Child, Sibling, Parent, Grandchild, "Nephew / Niece").
+  * Editing or removing one side changes both.
+  * Duplicate, self and conflicting links are rejected, partly by database constraints.
+* **Shared mobile numbers:** patients may share one; it is indexed but not unique.
+* **The doctor's family-history panel** lists each relative with:
+  * their diagnoses and dates (duplicates merged, newest first);
+  * chronic notes (their past history and constitution);
+  * their last visit, and a link to open their record in a new tab with a *Back to …* link.
+
+  Since Phase 3 the family-history field is auto-filled from this panel when it's empty, or new facts are offered with *Add to family history* (see below); the old *Insert* button is gone. Relatives' prescriptions and visits never appear in the patient's own history or timeline.
+
+### Automatic family connections (Phase 3)
+
+When relatives are linked, the rest of the close family is worked out automatically. The rules live in `INFERENCE_RULES` in [clinic/relationships.py](clinic/relationships.py):
+
+| If B is A's… | and C is B's… | then C is A's… |
+|---|---|---|
+| parent | spouse | parent (Father/Mother by C's sex) |
+| parent | child (C ≠ A) | sibling |
+| parent | parent | grandparent |
+| sibling | parent | parent |
+| sibling | sibling (C ≠ A) | sibling |
+| child | child | grandchild |
+| spouse | child | child |
+
+How inference behaves:
+
+* **Scope:** only close family is inferred (parents, siblings, grandparents, children, grandchildren). Cousins, in-laws, uncles and aunts can still be linked manually.
+* **Two-way and sex-aware:** every inferred link is stored both ways, labelled by sex, with neutral labels (Parent, Sibling, Child) when sex is unknown.
+* **When it runs:** `rebuild_inferred_links()` runs after every add, edit, confirm, reject or remove. It recomputes the whole connected family in one transaction and is idempotent. Inferred links are chained, so "my mother's husband" becomes "my father", and then "my father's mother" becomes "my grandmother".
+* **What is stored:** each link records `source` (`MANUAL` or `INFERRED`), `inferred_via` (shown as "Auto-linked via Mother") and `status` (`ACTIVE` or `REJECTED`).
+* **Precedence:** manual links always win.
+  * Removing a manual link also removes inferred links that depended only on it.
+  * Removing an inferred link marks the pair `REJECTED`, so it is never inferred again until an admin clicks *Undo*.
+  * If the rules disagree about a pair, no link is created and an `INFERENCE_CONFLICT` entry is written to the audit log.
+* **On screen:**
+  * The patient page shows **Linked** or **Auto-linked via …**, with *Confirm* (turns it manual) and *Remove*.
+  * After registration, reception sees "Also connected automatically: Ramesh (Father), …".
+* **Repairs:** `python manage.py rebuild_family_links` rebuilds every family. Run it once after migrating, or any time.
+
+### History that fills itself (Phase 3)
+
+`HISTORY_FIELDS` in [clinic/prefill.py](clinic/prefill.py) decides what is **stable history** and what is **visit-specific**:
+
+| Section | Stable (pre-filled) | Visit-specific (never pre-filled) |
+|---|---|---|
+| Case history | past history, family history | presenting complaints |
+| Physical generals | all 14: sleep, dreams, thirst, appetite, desires, aversions, urine, stool, sweat, thermals, menses, obstetric history, constitution, habits | – |
+| Mental generals | all 16 | – |
+| Past treatment | previous medication, duration, outcome, notes | – |
+| Follow-up assessment, examination, diagnosis, investigations, prescription | – | everything |
+
+* **Pre-fill:** when a visit that isn't completed opens, each empty stable field is pre-filled from the **most recent earlier visit that recorded it**, looking across all visits.
+  * This applies to both new cases and follow-ups; follow-ups also keep the Phase 1 carry-forward.
+  * Pre-filled fields have a light background and a "From visit on 12 Mar 2026" tag, which disappears once the field is edited.
+  * Each history section has *Refresh from history* and *Clear* buttons.
+* **Saving:** values are written only when the form is saved. Opening a page creates nothing. Each history section stores `prefill_sources` (field → source visit) and writes a `HISTORY_PREFILLED` audit entry. Completed visits are never pre-filled.
+* **Past history summary:** a read-only panel (Doctor/Admin) at the top of the case history, rebuilt live from records each time. It lists every earlier diagnosis (merged, with dates), remedies with potency and dates, and investigations with report links.
+* **Family history:** built from **every active relative, manual and inferred**, using all of their visits.
+  * Each relative contributes diagnoses with dates (merged, newest first) and chronic notes from past history and constitution.
+  * Relatives are grouped as Parents, Siblings, Grandparents, Children and Spouse, e.g. `Mother (Lakshmi, 58) – Hypertension (2025), Diabetes (2024)`.
+  * It works in both directions: linking a parent and child gives each the other's conditions.
+  * If the field is **empty**, it is auto-filled, marked "From linked family records".
+  * If the field **already has text**, it is never overwritten. Instead the page shows *"New information from linked relatives: …"* with **Add to family history** and **Ignore**.
+  * Nothing is ever written to a relative's record.
+
+### Consult & prescribe for a family member (Phase 3)
+
+1. **Start:** in the family panel, the doctor clicks **Consult & prescribe for Lakshmi**, which opens in a new tab with *Back to Ravi*. This creates a visit **for the relative** with:
+   * `consultation_mode = THROUGH_FAMILY`;
+   * `reported_by` set to the current patient ("Reported by son, Ravi");
+   * `FOLLOW_UP` if the relative has earlier visits, otherwise `NEW`.
+2. **Consult:** the relative's own history, previous prescriptions, pre-fill and family history all appear. Examination is optional and marked "Patient not present".
+3. **Send to pharmacy:** the order belongs to the relative (their name, OPD No. and label) and shows **"Collect by: Ravi (son)"**. In the queue it sits right after Ravi's own order with a *Same pickup as Ravi* badge.
+4. **Where it appears:** only in the relative's history and timeline, marked *Consulted through family member*, never in Ravi's record. It is audited (`VISIT_THROUGH_FAMILY`, `COLLECT_BY_ORDER`).
+
+### Lab dashboard and report history (Phase 3)
+
+* **Dashboard** (the lab user's `/`):
+  * Pending, Overdue (pending longer than `LAB_OVERDUE_DAYS`, default 1 day) and Completed-today counts.
+  * The pending table, oldest first, with overdue rows highlighted, search by OPD No., name or test, and a test-type filter.
+  * **Upload report** opens a modal (file + remarks); the row disappears and the counts update without reloading. The report is tagged `LAB`, the investigation is marked completed with `completed_at`, and the requesting doctor gets a bell notification ("Report ready: …").
+  * The last 10 uploads.
+* **Previous reports:** `/lab/reports/` with filters, plus per-patient report history to compare results over time. These show investigation data and patient identity only.
+* **Corrected reports:** a corrected upload creates version *n+1* and keeps the old file as `SUPERSEDED`, visible to Doctor/Admin only. The doctor is notified. Lab users cannot delete reports; only admins can.
+
+### Prescription → pharmacy (reception dispenses)
+
+1. The doctor clicks *Send to pharmacy* (or *Send but keep consultation open*). This saves the case record and freezes the items into a versioned **dispense order**. The order is a snapshot of remedy, potency, form, quantity, dose / repetition, duration and instructions.
+2. Reception gets a notification: a bell count, a toast with an optional sound, and a browser notification if allowed. The browser polls `GET /api/notifications/unread/` every 12 seconds and pauses while the tab is hidden.
+3. Reception moves the order **New → Preparing → Ready → Dispensed** and prints a slip or labels. The doctor sees the status on the case record and in *Today's patients*.
+4. If the doctor changes a prescription after sending it, saving sends a new version automatically:
+   * Reception gets an **Updated prescription** alert, with added and changed items highlighted and removed items struck through.
+   * The previous open order becomes `SUPERSEDED`. A dispensed order stays `DISPENSED`.
+
+Notifications are delivered through [core/inbox.py](core/inbox.py). To move to WebSockets, set `NOTIFICATION_PUSH_BACKEND` to a channel-layer backend; the callers stay the same.
 
 ## REST API
 
-* **Authentication:** session login, or a token:
-  * `POST /api/auth/login/ {"username","password"}` returns `{"token": …}`.
-  * Send the token as `Authorization: Token <key>`.
-  * `GET /api/auth/me/` returns the current user's role and per-section access.
-* **Resources:**
-  * `patients`, `visits` (the detail view nests every section the caller may see)
-  * `case-histories`, `physical-generals`, `mental-generals`, `examinations`, `diagnoses`
-  * `investigations`, `investigation-reports` (multipart `file`)
+* **Authentication:**
+  * `POST /api/auth/login/` returns a token; send it as `Authorization: Token <key>`.
+  * `GET /api/auth/me/` returns your role, your home screen, and access for every section.
+* **Phase 3:**
+  * `GET /api/patients/<id>/relationships/` now includes `source`, `status`, `inferred_via` and `via_label`. New actions: `POST .../relationships/<link_id>/confirm/`, `.../reject/`, and `.../unreject/` (admin).
+  * `GET /api/patients/<id>/history-prefill/` and `GET /api/patients/<id>/family-history/` (Doctor/Admin).
+  * `POST /api/patients/<relative_id>/visits/` with `{"consultation_mode": "THROUGH_FAMILY", "reported_by": <patient_id>}`. Returns 400 unless the two are linked as family.
+  * `GET /api/lab/dashboard/`.
+  * `GET /api/investigation-reports/?status=&test=&date_from=&date_to=&uploaded_by=me&patient=`.
+  * `POST /api/investigation-reports/<id>/correct/`.
+* **Patients:**
+  * `patients` (identity-only for the lab)
+  * `GET /api/patients/<id>/history/` (Doctor/Admin)
+  * `GET|POST /api/patients/<id>/relationships/` and `DELETE /api/patients/<id>/relationships/<link_id>/`
+  * `GET /api/patients/<id>/family-history/` (Doctor/Admin)
+* **Visits:**
+  * `visits`, filterable by `status` and `visit_type`
+  * `POST /api/visits/check-in/`
+  * `POST /api/visits/<id>/repeat-prescription/`
+* **Clinical sections:**
+  * `case-histories`, `followup-notes`, `physical-generals`, `mental-generals`, `examinations`, `diagnoses`
+  * `investigations`, `investigation-reports`
   * `past-treatments`, `past-treatment-attachments`
   * `patient-images`
-  * `repertory-analyses` (nested `entries`)
-  * `prescriptions` (nested writable `items`)
-  * `followups`
-  * `users` (admin; actions `lock`, `unlock`, `reset-password`)
-  * `audit-logs` (admin, read-only)
-  * `dashboard`
+  * `repertory-analyses`
+* **Prescriptions:**
+  * `prescriptions` (editing re-sends to the pharmacy if the prescription was already sent)
+  * `POST /api/prescriptions/<id>/send-to-pharmacy/` with `{"keep_open": false}`
+* **Follow-ups:**
+  * `followups` (progress notes)
+  * `scheduled-followups`, with actions `reschedule`, `cancel` and `check-in`
+* **Pharmacy:** `dispense-orders`, with actions `start-preparing`, `mark-ready`, `mark-dispensed` and `cancel`. Responses contain items only, never clinical data.
+* **Notifications:**
+  * `GET /api/notifications/unread/`
+  * `POST /api/notifications/<id>/read/`
+  * `POST /api/notifications/read-all/`
+* **Admin:** `users`, `audit-logs`.
+* **Dashboard:** `dashboard` (role-filtered).
 * **Query features:**
   * Pagination: `?page=`
   * Search: `?search=`
-  * Sorting: `?ordering=-visit_date`
-  * Filtering, e.g. `?visit__patient=3&status=REQUESTED` or `?visit_date__gte=2026-01-01`
+  * Sorting: `?ordering=`
+  * Filtering, e.g. `?status=SCHEDULED&scheduled_date__lte=2026-11-01`
 
 ## Data model and audit
 
-Every clinical table carries `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by` and `is_deleted`. Deletes are **soft**: the row is hidden everywhere but kept. Deleting a patient also soft-deletes that patient's visits.
+Every clinical table carries `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at`, `deleted_by` and `is_deleted`. Deletes are soft.
 
-Every create, update and delete is written to `audit_logs` with a field-level old/new diff, the user and their IP address. The audit log also records:
+Every create, update and delete is written to `audit_logs` with a field-level diff, user and IP address. The log also records workflow actions:
 
-* record views
-* logins and logouts
-* failed logins
-* lock/unlock events
-* password resets
-* exports
-
-After 5 failed logins (`MAX_FAILED_LOGINS`) an account locks until an administrator unlocks it. Sessions expire after 8 hours or when the browser closes, and CSRF protection is on for every form.
+* views, logins and lockouts, exports
+* check-in, visit type changes
+* follow-ups: scheduled, rescheduled, cancelled, completed, missed
+* prescriptions: repeated, sent, re-sent, updated
+* patient saved without a case sheet
+* relative linked, edited or removed; family history inserted
+* every dispense status change; label printed
 
 ```
-users ─┬─< visits (doctor)                       audit_logs >── users
-       │
-patients ──< visits ──┬── case_histories        (1:1)
-           │          ├── physical_generals     (1:1)
-           │          ├── mental_generals       (1:1)
-           │          ├── examinations          (1:1)
-           │          ├── diagnoses             (1:1)
-           │          ├── past_treatments (1:1) ──< past_treatment_attachments
-           │          ├── repertory_analysis (1:1) ──< repertory_entries
-           │          ├──< investigations ──< investigation_reports
-           │          ├──< prescriptions ──< prescription_items
-           │          └──< followups
-           └──< patient_images (stage BEFORE/AFTER, optional visit)
-opd_counters  (per-year sequence for OPD numbers, row-locked)
+users ─┬─< visits (doctor)                                   audit_logs >── users
+       └─< notifications (recipient)
+patients ─┬─< visits ──┬── case_histories / physical_generals / mental_generals (1:1)
+          │            ├── followup_notes / examinations / diagnoses / past_treatments (1:1)
+          │            ├── repertory_analysis (1:1) ──< repertory_entries
+          │            ├──< investigations ──< investigation_reports
+          │            ├──< prescriptions ──< prescription_items
+          │            │          └──< dispense_orders (versioned) ──< dispense_items (snapshot)
+          │            ├──< followups (progress notes)
+          │            └── previous_visit ──> visits (follow-up chain)
+          ├──< scheduled_followups (one SCHEDULED per patient)
+          ├──< patient_images
+          └──< patient_relationships >── patients (stored both ways)
+opd_counters  (per-year OPD sequence)
 ```
 
-Roles are stored on `users.role` (`ADMIN`, `DOCTOR`, `ATTENDER`, `LAB`).
+**Migrations:**
 
-To print the full PostgreSQL DDL, connect to a database and run `python manage.py sqlmigrate clinic 0001`. Do the same for `accounts` and `core`.
+| Migration | What it does |
+|---|---|
+| `clinic/0002_checkin_and_followup_scheduling` | Visit `status` and `previous_visit`; follow-up notes; scheduled follow-ups |
+| `clinic/0003_backfill_visit_status_and_followups` | Fills in data for existing visits: links follow-ups to their previous visit, sets status (past visits completed), and turns future follow-up dates into `SCHEDULED` records |
+| `clinic/0004_relationships_and_pharmacy` | Relationships; prescription item form, quantity and dose; dispense orders and items |
+| `clinic/0005_family_inference_prefill_lab` | Links get `source`, `inferred_via`, `status` (existing links become `MANUAL`/`ACTIVE`). Visits get `consultation_mode` (existing visits become `IN_PERSON`) and `reported_by`. History sections get `prefill_sources`. Dispense orders get `collect_by`. Investigations get `completed_at`. Reports get `remarks`, `version`, `status`, `supersedes` |
+| `clinic/0006_backfill_investigation_completed_at` | Sets `completed_at` for investigations that were already completed |
+| `core/0004` | New audit actions and notification kinds |
+| `core/0002` | Audit action choices |
+| `core/0003` | Audit action choices; notifications |
+
+After upgrading, apply the migrations and build the automatic family links once:
+
+```bash
+python manage.py migrate
+python manage.py rebuild_family_links
+```
 
 ## Built in for later
 
@@ -237,10 +432,12 @@ To print the full PostgreSQL DDL, connect to a database and run `python manage.p
 
 ```
 hamsa/      settings, urls, wsgi
-core/       audited base model + soft delete, audit log, request-context middleware,
+core/       audited base model + soft delete, audit log, notifications (inbox.py), request-context middleware,
             upload validators, dashboard, protected media, management commands
 accounts/   custom User (role, lock state, signature), RBAC table, auth backend, user admin
 clinic/     clinical models, case-record form bundle, views, reports, tests
+            services.py (check-in, follow-ups, repeat), history.py (doctor's history),
+            relationships.py + family.py (family links/history), pharmacy.py (dispense orders)
 api/        DRF serializers, viewsets, permissions, Swagger
 templates/  Bootstrap 5 screens      static/  css, js, logo
 k8s/        Kubernetes manifests     docker/  entrypoint

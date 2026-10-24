@@ -1,0 +1,29 @@
+{# Inside the case-record form: Send to pharmacy (submit buttons) + order status history. #}
+<div class="pharmacy-box mt-3">
+  <div class="d-flex flex-wrap align-items-center gap-2">
+    <div class="fw-semibold me-auto"><i class="bi bi-capsule text-success"></i> Pharmacy
+      {% with latest=dispense_orders.0 %}{% if latest %}
+      <span class="badge pharmacy-{{ latest.status|lower }}">{{ latest.get_status_display }}</span>
+      <span class="small text-muted">v{{ latest.version }} sent {{ latest.sent_at|date:"H:i" }}{% if latest.sent_by %} by {{ latest.sent_by }}{% endif %}</span>
+      {% else %}<span class="small text-muted">not sent yet</span>{% endif %}{% endwith %}
+    </div>
+    {% if access.pharmacy_send.edit %}
+    <button class="btn btn-sm btn-success" name="send_to_pharmacy" value="complete" title="Saves the case record, sends the medicines to reception and completes the consultation">
+      <i class="bi bi-send"></i> {% if dispense_orders %}Save &amp; re-send to pharmacy{% else %}Send to pharmacy{% endif %}</button>
+    <button class="btn btn-sm btn-outline-success" name="send_to_pharmacy" value="keep_open" title="Send now but keep the consultation open">
+      Send but keep consultation open</button>
+    {% endif %}
+  </div>
+  {% if dispense_orders %}
+  <ul class="list-unstyled small mb-0 mt-2">
+    {% for order in dispense_orders %}
+    <li class="{% if order.status == 'SUPERSEDED' or order.status == 'CANCELLED' %}text-muted{% endif %}">
+      v{{ order.version }} · {{ order.sent_at|date:"d-M H:i" }} · <span class="badge pharmacy-{{ order.status|lower }}">{{ order.get_status_display }}</span>
+      {% if order.is_update %}<span class="badge text-bg-light border">update</span>{% endif %}
+      — {% for item in order.items.all %}{{ item.medicine_name }} {{ item.potency }}{% if not forloop.last %}, {% endif %}{% endfor %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if access.pharmacy_send.edit %}<div class="form-text">If you change medicines after sending, saving sends an updated version to reception automatically.</div>{% endif %}
+</div>

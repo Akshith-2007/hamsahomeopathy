@@ -1,0 +1,18 @@
+{# Row actions for a ScheduledFollowUp `f`; `next` is where to return afterwards. #}
+<div class="d-inline-flex flex-wrap gap-1 justify-content-end">
+  {% if nav.checkin.edit %}
+  <form method="post" action="{% url 'followup_checkin' f.pk %}">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <button class="btn btn-sm btn-success" title="Check in for this follow-up"><i class="bi bi-door-open"></i> Check in</button>
+  </form>
+  {% endif %}
+  {% if nav.followup_schedule.edit %}
+  <button type="button" class="btn btn-sm btn-outline-secondary" title="Reschedule"
+          data-reschedule-url="{% url 'followup_reschedule' f.pk %}" data-date="{{ f.scheduled_date|date:'Y-m-d' }}"
+          data-time="{{ f.scheduled_time|time:'H:i' }}" data-patient="{{ f.patient.full_name }}" data-next="{{ next }}"><i class="bi bi-calendar-event"></i></button>
+  <form method="post" action="{% url 'followup_cancel' f.pk %}" data-confirm="Cancel the follow-up of {{ f.patient.full_name }} on {{ f.scheduled_date|date:'d-M-Y' }}?">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <button class="btn btn-sm btn-outline-danger" title="Cancel follow-up"><i class="bi bi-x-lg"></i></button>
+  </form>
+  {% endif %}
+</div>

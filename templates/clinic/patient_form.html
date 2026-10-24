@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}New patient{% endblock %}
 {% block content %}
-<h1 class="h4 mb-3"><i class="bi bi-person-plus text-success"></i> Register new patient</h1>
+<h1 class="h4 mb-1"><i class="bi bi-person-plus text-success"></i> Register new patient</h1>
+<p class="text-muted small mb-3">Checks the patient in today as a <strong>new case</strong>.</p>
 <form method="post" enctype="multipart/form-data" class="card border-0 shadow-sm">{% csrf_token %}
   <div class="card-body">
     {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
@@ -18,12 +19,27 @@
           <div class="col-sm-6">{% include "partials/field.html" with field=form.registration_date %}</div>
         </div>
         {% include "partials/field.html" with field=form.address %}
+        {% if can_link %}
+        <div class="family-step mt-3" data-relatives data-mode="multi" data-lookup-url="{% url 'patient_lookup' %}"
+             data-phone-input="#{{ form.phone.id_for_label }}">
+          <div class="fw-semibold mb-1"><i class="bi bi-people text-primary"></i> Are any family members already registered with us?</div>
+          <div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="has_family" value="no" id="hf-no" {% if request.POST.has_family != 'yes' %}checked{% endif %}><label class="form-check-label" for="hf-no">No</label></div>
+          <div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="has_family" value="yes" id="hf-yes" {% if request.POST.has_family == 'yes' %}checked{% endif %}><label class="form-check-label" for="hf-yes">Yes</label></div>
+          <div class="alert alert-warning py-2 small mt-2 mb-0 d-none" data-phone-matches></div>
+          <div class="mt-2{% if request.POST.has_family != 'yes' %} d-none{% endif %}" data-family-panel>
+            <input type="search" class="form-control form-control-sm" placeholder="Search relatives by mobile, name or OPD No." data-relative-search>
+            <div class="list-group mt-1 mb-2" data-relative-results></div>
+            <div data-selected-relatives></div>
+            <div class="form-text">Reception only sees the relative's name, OPD No., age and sex.</div>
+          </div>
+          <template data-relationship-options>{% for value, label in relationship_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</template>
+        </div>
+        {% endif %}
         <hr>
         <div class="row">
           <div class="col-sm-6">{% include "partials/field.html" with field=visit_form.visit_date label="Visit date" %}</div>
           <div class="col-sm-6">{% include "partials/field.html" with field=visit_form.doctor label="Consulting doctor" %}</div>
         </div>
-        <input type="hidden" name="visit-visit_type" value="NEW">
       </div>
       <div class="col-lg-4">
         <label class="form-label fw-semibold"><i class="bi bi-camera"></i> Patient photo</label>
@@ -39,9 +55,10 @@
     </div>
   </div>
   <div class="card-footer bg-white text-end">
-    <a class="btn btn-outline-secondary" href="{% url 'home' %}">Cancel</a>
-    <button class="btn btn-success"><i class="bi bi-check2"></i> Register &amp; open case record</button>
+    <a class="btn btn-outline-secondary" href="{% url 'checkin' %}">Cancel</a>
+    <button class="btn btn-outline-success" name="action" value="save_only"><i class="bi bi-person-check"></i> Save patient only</button>
+    <button class="btn btn-success" name="action" value="save_open"><i class="bi bi-file-medical"></i> Save &amp; fill case sheet</button>
   </div>
 </form>
 {% endblock %}
-{% block scripts %}{% load static %}<script src="{% static 'js/case_record.js' %}"></script>{% endblock %}
+{% block scripts %}{% load static %}<script src="{% static 'js/case_record.js' %}"></script><script src="{% static 'js/relatives.js' %}"></script>{% endblock %}

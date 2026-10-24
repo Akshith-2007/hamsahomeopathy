@@ -8,11 +8,8 @@
   <a href="{% url 'patient_detail' patient.pk %}" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> {{ patient.full_name }}</a>
   <div class="d-flex flex-wrap gap-2">
     {% if access.prescription.view %}<a class="btn btn-sm btn-outline-success" href="{% url 'prescription_print' visit.pk %}" target="_blank"><i class="bi bi-printer"></i> Print prescription</a>{% endif %}
-    {% if can_add_visit %}
-    <form method="post" action="{% url 'visit_create' patient.pk %}">{% csrf_token %}
-      <button class="btn btn-sm btn-outline-primary"><i class="bi bi-calendar-plus"></i> New follow-up visit</button>
-    </form>
-    {% endif %}
+    {% if access.history.view %}<a class="btn btn-sm btn-outline-primary" href="{% url 'patient_history' patient.pk %}"><i class="bi bi-clock-history"></i> Full history page</a>{% endif %}
+    {% if access.checkin.edit %}<a class="btn btn-sm btn-outline-primary" href="{% url 'patient_detail' patient.pk %}"><i class="bi bi-door-open"></i> Check in / new visit</a>{% endif %}
     {% if can_delete_visit %}
     <form method="post" action="{% url 'visit_delete' visit.pk %}" onsubmit="return confirm('Delete this visit?');">{% csrf_token %}
       <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i> Delete visit</button>
@@ -21,34 +18,41 @@
   </div>
 </div>
 
-{# ------------------------------------------------------------ previous visits #}
-{% if history %}
-<div class="sec mb-3">
-  <button type="button" class="sec-head" data-bs-toggle="collapse" data-bs-target="#body-history" aria-expanded="true">
-    <i class="bi bi-clock-history"></i> Previous visit history <span class="badge rounded-pill text-bg-primary ms-1">{{ history|length }}</span>
-    <span class="small fw-normal text-muted ms-2">Click a row for full details</span>
-    <i class="bi bi-chevron-down chev"></i>
-  </button>
-  <div id="body-history" class="collapse show">
-    <div class="table-responsive">
-      <table class="table table-sm table-hover grid-table mb-0">
-        <thead><tr><th>Visit date</th><th>Type</th><th>Doctor</th>{% if access.diagnosis.view %}<th>Diagnosis</th>{% endif %}{% if access.prescription.view %}<th>Prescription summary</th>{% endif %}</tr></thead>
-        <tbody>
-        {% for h in history %}
-          <tr class="history-row" data-summary-url="{% url 'visit_summary' h.pk %}" data-record-url="{% url 'visit_record' h.pk %}" tabindex="0">
-            <td class="text-nowrap">{{ h.visit_date|date:"d-M-Y" }}</td>
-            <td>{{ h.get_visit_type_display }}</td>
-            <td>{{ h.doctor|default:"—" }}</td>
-            {% if access.diagnosis.view %}<td>{{ h.diagnosis_summary|default:"—" }}</td>{% endif %}
-            {% if access.prescription.view %}<td>{{ h.prescription_summary|default:"—" }}</td>{% endif %}
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
+{% if back_patient %}<div class="alert alert-info py-2 d-flex flex-wrap align-items-center gap-2 no-print"><i class="bi bi-people"></i> You are viewing a relative's record.
+  <a class="alert-link" href="{% if back_visit %}{% url 'visit_record' back_visit.pk %}{% else %}{% url 'patient_detail' back_patient.pk %}{% endif %}"><i class="bi bi-arrow-left"></i> Back to {{ back_patient.full_name }}</a></div>{% endif %}
+{% if reported_by_text %}<div class="alert alert-warning py-2 d-flex flex-wrap align-items-center gap-2"><i class="bi bi-telephone-forward"></i>
+  <strong>Consulted through family member</strong> — {{ reported_by_text }}. The patient is not present; record the complaint as reported.</div>{% endif %}
+{% if history %}{% include "clinic/_summary_bar.html" %}{% endif %}
+
+<div class="row g-3 mb-3">
+  <div class="{% if followup_card %}col-xl-8{% else %}col-12{% endif %}">
+    {% if history %}
+    {# ------------------------------------------------ doctor: previous visits + timeline #}
+    <div class="card widget h-100" id="history-card">
+      <div class="card-header pb-0">
+        <ul class="nav nav-tabs card-header-tabs" role="tablist">
+          <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-visits" type="button" role="tab"><i class="bi bi-clock-history"></i> Previous visits <span class="badge rounded-pill text-bg-primary">{{ previous_visits|length }}</span></button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-timeline" type="button" role="tab"><i class="bi bi-bar-chart-steps"></i> Timeline</button></li>
+        </ul>
+      </div>
+      <div class="tab-content">
+        <div class="tab-pane fade show active" id="tab-visits" role="tabpanel">{% include "clinic/_previous_visits_grid.html" %}</div>
+        <div class="tab-pane fade p-3" id="tab-timeline" role="tabpanel">{% include "clinic/_timeline.html" with current_visit=visit %}</div>
+      </div>
     </div>
+    {% elif previous_visits %}
+    {# ------------------------------------------------ reception: visit list only #}
+    <div class="sec mb-0">
+      <button type="button" class="sec-head" data-bs-toggle="collapse" data-bs-target="#body-history" aria-expanded="true">
+        <i class="bi bi-clock-history"></i> Previous visit history <span class="badge rounded-pill text-bg-primary ms-1">{{ previous_visits|length }}</span>
+        <i class="bi bi-chevron-down chev"></i>
+      </button>
+      <div id="body-history" class="collapse show">{% include "clinic/_previous_visits_grid.html" %}</div>
+    </div>
+    {% endif %}
   </div>
+  {% if followup_card %}<div class="col-xl-4">{% include "partials/followup_card.html" %}</div>{% endif %}
 </div>
-{% endif %}
 
 <form method="post" enctype="multipart/form-data" id="case-record" novalidate>{% csrf_token %}
 
@@ -58,6 +62,7 @@
   <div class="d-flex align-items-center gap-2"><span class="small">Date:</span>{{ vf.visit_date }}</div>
   <div class="d-flex align-items-center gap-2"><span class="small">Visit:</span>{{ vf.visit_type }}</div>
   <div class="d-flex align-items-center gap-2"><span class="small">Doctor:</span>{{ vf.doctor }}</div>
+  <span class="badge {% if visit.status == 'WAITING' %}text-bg-warning{% elif visit.status == 'IN_CONSULTATION' %}text-bg-light{% else %}text-bg-success{% endif %}">{{ visit.get_status_display }}</span>
 </div>
 {% if vf.errors %}<div class="alert alert-danger py-1 small mb-0">{{ vf.errors }}</div>{% endif %}
 <div class="bg-white border border-top-0 rounded-bottom p-2 mb-3 small text-muted">
@@ -101,16 +106,55 @@
     </div></div></div>
   </div>
 
+  {# ------------------------------------------------ follow-up: compare with previous visit #}
+  {% if visit.visit_type == 'FOLLOW_UP' and access.followup_assessment.view %}
+  {% with f=forms.followup_assessment %}
+  <div class="col-12">
+    {% include "partials/sec_head.html" with key="compare" title="Follow-up: compare with previous visit" icon="layout-split" acc=access.followup_assessment %}
+      <div class="row g-3">
+        <div class="col-lg-6">
+          <div class="compare-prev h-100">
+            {% if compare_visit %}
+            <div class="fw-semibold mb-1"><i class="bi bi-skip-backward"></i> Previous visit · {{ compare_visit.visit_date|date:"d-M-Y" }} <span class="small text-muted">{{ compare_visit.doctor|default:"" }}</span></div>
+            <div class="tl-label">Chief complaint</div>
+            <div class="small">{{ compare_visit.case_history.presenting_complaints|default:"—"|linebreaksbr }}</div>
+            <div class="tl-label mt-2">Diagnosis</div>
+            <div class="small">{{ compare_visit.diagnosis.final|default:compare_visit.diagnosis.provisional|default:"—" }}</div>
+            <div class="tl-label mt-2">Prescription</div>
+            {% for rx in compare_visit.prescriptions.all %}{% for i in rx.items.all %}<div class="small"><span class="fw-semibold">{{ i.medicine_name }}</span> {{ i.potency }}{% if i.dose %} · {{ i.dose }}{% endif %}{% if i.duration %} · {{ i.duration }}{% endif %}{% if i.instructions %} · {{ i.instructions }}{% endif %}</div>{% endfor %}{% empty %}<div class="small text-muted">—</div>{% endfor %}
+            <div class="tl-label mt-2">Doctor's notes</div>
+            {% if compare_visit.followup_note.notes %}<div class="small">{{ compare_visit.followup_note.notes|linebreaksbr }}</div>{% endif %}
+            {% for fu in compare_visit.followups.all %}<div class="small">{{ fu.visit_date|date:"d-M" }}: {{ fu.progress_notes|default:"—" }}</div>{% empty %}{% if not compare_visit.followup_note.notes %}<div class="small text-muted">—</div>{% endif %}{% endfor %}
+            {% else %}<div class="text-muted small">No previous visit found.</div>{% endif %}
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <div class="fw-semibold mb-1"><i class="bi bi-pencil-square"></i> This visit</div>
+          <label class="form-label small fw-semibold mb-1" for="{{ f.changes_since_last.id_for_label }}">Changes since last visit</label>
+          {{ f.changes_since_last }}
+          <div class="field-row mt-2"><label for="{{ f.remedy_response.id_for_label }}">Response to remedy</label><div class="field">{{ f.remedy_response }}</div></div>
+          <label class="form-label small fw-semibold mb-1" for="{{ f.notes.id_for_label }}">Doctor's notes</label>
+          {{ f.notes }}
+        </div>
+      </div>
+    </div></div></div>
+  </div>
+  {% endwith %}
+  {% endif %}
+
   {# ---------------------------------------------------------- case history #}
   {% with f=forms.case_history %}
   <div class="col-12">
     {% include "partials/sec_head.html" with key="case_history" title="Case History" icon="journal-medical" acc=access.case_history %}
+      {% if past_summary %}{% include "clinic/_past_summary.html" %}{% endif %}
       <label class="form-label fw-semibold small mb-1" for="{{ f.presenting_complaints.id_for_label }}">Presenting Complaints <span class="text-danger">*</span></label>
       {{ f.presenting_complaints }}{{ f.presenting_complaints.errors }}
       <div class="row g-3 mt-0">
         <div class="col-md-6"><label class="form-label fw-semibold small mb-1">Past History</label>{{ f.past_history }}</div>
-        <div class="col-md-6"><label class="form-label fw-semibold small mb-1">Family History</label>{{ f.family_history }}</div>
+        <div class="col-md-6"><label class="form-label fw-semibold small mb-1">Family History</label>{{ f.family_history }}
+          {% if family is not None %}<input type="hidden" name="family_history_inserted" value="0" id="family-history-inserted">{% endif %}</div>
       </div>
+      {% if family is not None %}{% include "clinic/_family_history_panel.html" %}{% endif %}
     </div></div></div>
   </div>
   {% endwith %}
@@ -154,7 +198,11 @@
   {# ----------------------------------------------- examination / diagnosis #}
   {% with f=forms.examination %}
   <div class="{% if access.diagnosis.view %}col-lg-6{% else %}col-12{% endif %}">
+    {% if visit.consultation_mode == 'THROUGH_FAMILY' %}
+    {% include "partials/sec_head.html" with key="examination" title="Physical Examination (optional)" badge="Patient not present" icon="heart-pulse-fill" acc=access.examination %}
+    {% else %}
     {% include "partials/sec_head.html" with key="examination" title="Physical Examination" icon="heart-pulse-fill" acc=access.examination %}
+    {% endif %}
       <div class="row">
         <div class="col-sm-6">
           {% include "partials/field.html" with field=f.pulse label="Pulse" %}
@@ -337,6 +385,15 @@
   {% endwith %}
   {% endif %}
 
+  {# ------------------------------------------------ previous prescriptions (doctor) #}
+  {% if history %}
+  <div class="col-12">
+    {% include "partials/sec_head.html" with key="previous_prescriptions" title="Previous prescriptions" icon="clock-history" acc=access.history badge=history.previous_prescriptions|length %}
+      {% include "clinic/_previous_prescriptions.html" %}
+    </div></div></div>
+  </div>
+  {% endif %}
+
   {# ----------------------------------------------------------- prescription #}
   {% if access.prescription.view %}
   {% with f=forms.prescription fs=formsets.prescription %}
@@ -345,7 +402,7 @@
       {{ fs.management_form }}{{ fs.non_form_errors }}
       <div class="table-responsive">
         <table class="table table-sm grid-table mb-1" data-formset="rx" id="rx-table">
-          <thead><tr><th class="sn">S.No.</th><th>Medicine</th><th style="width:11rem">Potency</th><th style="width:12rem">Duration</th><th>Instructions</th>{% if access.prescription.edit %}<th></th>{% endif %}</tr></thead>
+          <thead><tr><th class="sn">S.No.</th><th style="min-width:11rem">Medicine</th><th style="width:8rem">Potency</th><th style="width:8rem">Form</th><th style="width:6rem">Qty</th><th style="min-width:9rem">Dose / repetition</th><th style="width:7rem">Duration</th><th style="min-width:9rem">Instructions</th>{% if access.prescription.edit %}<th></th>{% endif %}</tr></thead>
           <tbody>{% for form in fs %}{% include "clinic/_rx_row.html" %}{% endfor %}</tbody>
         </table>
       </div>
@@ -358,6 +415,7 @@
         <div class="col-md-6"><label class="form-label fw-semibold small mb-1">Dietary Advice</label>{{ f.dietary_advice }}</div>
         <div class="col-md-6"><label class="form-label fw-semibold small mb-1">Follow Up Advice</label>{{ f.followup_advice }}</div>
       </div>
+      {% include "clinic/_pharmacy_status.html" %}
     </div></div></div>
   </div>
   {% endwith %}
@@ -400,12 +458,31 @@
       <button type="button" class="btn btn-outline-secondary" data-expand-all><i class="bi bi-arrows-expand"></i> Expand all</button>
       <button type="button" class="btn btn-outline-secondary" data-collapse-all><i class="bi bi-arrows-collapse"></i> Collapse all</button>
     </div>
-    <button class="btn btn-success px-4"><i class="bi bi-save"></i> Save case record</button>
+    <div class="d-flex gap-2">
+      {% if access.consultation.edit and visit.status != 'COMPLETED' %}<button class="btn btn-outline-success" name="complete" value="1"><i class="bi bi-check2-circle"></i> Save &amp; complete consultation</button>{% endif %}
+      <button class="btn btn-success px-4"><i class="bi bi-save"></i> Save case record</button>
+    </div>
   </div>
 </div>
 {% endif %}
 </form>
 {% endwith %}
+
+{% if family and access.family_consult.edit %}{% for entry in family %}
+<form method="post" action="{% url 'consult_through_family' entry.relative.pk %}" id="consult-{{ entry.relative.pk }}" class="d-none"
+      data-confirm="Start a consultation for {{ entry.relative.full_name }} (not present), reported by {{ patient.full_name }}?">{% csrf_token %}
+  <input type="hidden" name="reported_by" value="{{ patient.pk }}">
+  <input type="hidden" name="back_visit" value="{{ visit.pk }}">
+</form>
+{% endfor %}{% endif %}
+{{ prefill_payload|json_script:"history-prefill" }}
+
+{% if history and access.prescription.edit %}{% for v, rx in history.previous_prescriptions %}
+<form method="post" action="{% url 'prescription_repeat' visit.pk rx.pk %}" id="repeat-rx-{{ rx.pk }}" class="d-none"
+      {% if current_rx_has_items %}data-confirm="This visit already has medicines entered. Replace them with the prescription of {{ v.visit_date|date:'d-M-Y' }}?"{% endif %}>{% csrf_token %}
+  <input type="hidden" name="replace" value="{% if current_rx_has_items %}1{% else %}0{% endif %}">
+</form>
+{% endfor %}{% endif %}
 
 <div class="modal fade" id="visitModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">

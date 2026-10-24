@@ -1,0 +1,66 @@
+{# Patient timeline: needs `history`; `current_visit` (optional) is highlighted. #}
+<div class="d-flex flex-wrap align-items-end gap-2 mb-2" data-timeline-filter>
+  <div><label class="form-label small mb-0">From</label><input type="date" class="form-control form-control-sm" data-filter-start value="{{ start|date:'Y-m-d' }}"></div>
+  <div><label class="form-label small mb-0">To</label><input type="date" class="form-control form-control-sm" data-filter-end value="{{ end|date:'Y-m-d' }}"></div>
+  <button type="button" class="btn btn-sm btn-outline-secondary" data-filter-clear>Clear</button>
+  <div class="btn-group btn-group-sm ms-auto">
+    <button type="button" class="btn btn-outline-secondary" data-timeline-expand="1">Expand all</button>
+    <button type="button" class="btn btn-outline-secondary" data-timeline-expand="0">Collapse all</button>
+  </div>
+</div>
+<div class="timeline">
+{% for v in history.timeline %}
+  <div class="timeline-item{% if v.pk == current_visit.pk %} is-current{% endif %}" data-date="{{ v.visit_date|date:'Y-m-d' }}">
+    <button type="button" class="timeline-head{% if not forloop.first %} collapsed{% endif %}" data-bs-toggle="collapse" data-bs-target="#tl-{{ v.pk }}" aria-expanded="{% if forloop.first %}true{% else %}false{% endif %}">
+      <span class="fw-semibold">{{ v.visit_date|date:"d-M-Y" }}</span>
+      <span class="badge {% if v.visit_type == 'NEW' %}text-bg-info{% else %}text-bg-secondary{% endif %}">{{ v.get_visit_type_display }}</span>
+      {% if v.pk == current_visit.pk %}<span class="badge text-bg-warning">This visit</span>{% endif %}
+      {% if v.consultation_mode == 'THROUGH_FAMILY' %}<span class="badge text-bg-light border text-warning-emphasis"><i class="bi bi-telephone-forward"></i> Consulted through family member{% if v.reported_by %} ({{ v.reported_by.full_name }}){% endif %}</span>{% endif %}
+      <span class="text-muted small text-truncate">{{ v.doctor|default:"" }}{% if v.diagnosis.final or v.diagnosis.provisional %} · {{ v.diagnosis.final|default:v.diagnosis.provisional }}{% endif %}</span>
+      <i class="bi bi-chevron-down chev ms-auto"></i>
+    </button>
+    <div id="tl-{{ v.pk }}" class="collapse{% if forloop.first %} show{% endif %}">
+      <div class="timeline-body">
+        <div class="row g-3">
+          <div class="col-lg-6">
+            <div class="tl-label">Chief complaint</div>
+            <div>{{ v.case_history.presenting_complaints|default:"—"|linebreaksbr }}</div>
+            <div class="tl-label mt-2">Diagnosis</div>
+            <div>{% if v.diagnosis %}{{ v.diagnosis.final|default:v.diagnosis.provisional|default:"—" }}{% if v.diagnosis.differential %} <span class="text-muted">(DD: {{ v.diagnosis.differential }})</span>{% endif %}{% else %}—{% endif %}</div>
+            {% if v.followup_note %}
+            <div class="tl-label mt-2">Follow-up assessment</div>
+            <div>{% if v.followup_note.remedy_response %}<span class="badge text-bg-light border">{{ v.followup_note.get_remedy_response_display }}</span> {% endif %}{{ v.followup_note.changes_since_last|linebreaksbr }}</div>
+            {% if v.followup_note.notes %}<div class="text-muted"><i class="bi bi-sticky"></i> {{ v.followup_note.notes|linebreaksbr }}</div>{% endif %}
+            {% endif %}
+            {% with notes=v.followups.all %}{% if notes %}
+            <div class="tl-label mt-2">Follow-up notes</div>
+            <ul class="mb-0 ps-3">{% for fu in notes %}<li>{{ fu.visit_date|date:"d-M" }}: {{ fu.progress_notes|default:"—" }}{% if fu.medicines_given %} <span class="text-muted">({{ fu.medicines_given }})</span>{% endif %}</li>{% endfor %}</ul>
+            {% endif %}{% endwith %}
+          </div>
+          <div class="col-lg-6">
+            <div class="tl-label">Prescription</div>
+            {% for rx in v.prescriptions.all %}
+              {% for i in rx.items.all %}<div><span class="fw-semibold">{{ i.medicine_name }}</span> {{ i.potency }}{% if i.dose %} · {{ i.dose }}{% endif %}{% if i.duration %} · {{ i.duration }}{% endif %}{% if i.instructions %} · {{ i.instructions }}{% endif %}</div>{% empty %}<div class="text-muted">—</div>{% endfor %}
+              {% if rx.dietary_advice %}<div class="small text-muted">Diet: {{ rx.dietary_advice }}</div>{% endif %}
+            {% empty %}<div class="text-muted">—</div>{% endfor %}
+            <div class="tl-label mt-2">Investigations</div>
+            {% for inv in v.investigations.all %}
+              <div><span class="badge text-bg-{% if inv.status == 'COMPLETED' %}success{% else %}warning{% endif %}">{{ inv.get_status_display }}</span> {{ inv.request_notes|default:"—" }}</div>
+              {% for r in inv.reports.all %}<a class="file-chip text-decoration-none" href="{{ r.file.url }}" target="_blank" rel="noopener"><i class="bi bi-file-earmark{% if r.is_pdf %}-pdf text-danger{% endif %}"></i> {{ r.title|default:r.filename|truncatechars:24 }} <span class="badge text-bg-{% if r.source == 'LAB' %}success{% else %}secondary{% endif %}">{{ r.source|title }}</span></a>{% endfor %}
+            {% empty %}<div class="text-muted">—</div>{% endfor %}
+            {% with imgs=v.images.all %}{% if imgs %}
+            <div class="tl-label mt-2">Images</div>
+            {% for img in imgs %}<a href="{{ img.image.url }}" target="_blank" title="{{ img.get_stage_display }}"><img src="{{ img.image.url }}" class="thumb me-1 mb-1" style="width:64px;height:64px" alt="{{ img.get_stage_display }}"></a>{% endfor %}
+            {% endif %}{% endwith %}
+          </div>
+        </div>
+        {% if v.pk != current_visit.pk %}
+        <div class="text-end mt-2"><button type="button" class="btn btn-sm btn-outline-primary" data-summary-url="{% url 'visit_summary' v.pk %}" data-record-url="{% url 'visit_record' v.pk %}"><i class="bi bi-window"></i> View full visit</button></div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% empty %}
+  <div class="text-muted small">No visits in this period.</div>
+{% endfor %}
+</div>

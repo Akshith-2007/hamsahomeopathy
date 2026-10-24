@@ -1,0 +1,84 @@
+{% extends "base.html" %}{% load static %}
+{% block title %}Lab dashboard{% endblock %}
+{% block container %}container-fluid px-lg-4{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h4 mb-0"><i class="bi bi-eyedropper text-primary"></i> Lab dashboard</h1>
+  <a class="btn btn-outline-primary btn-sm" href="{% url 'lab_reports' %}"><i class="bi bi-file-earmark-medical"></i> Previous reports</a>
+</div>
+
+<div class="row g-3 mb-3" data-lab-counts>
+  <div class="col-4"><div class="stat-card"><div class="text-muted small">Pending</div><div class="stat-value text-warning" data-count="pending">{{ counts.pending }}</div></div></div>
+  <div class="col-4"><div class="stat-card"><div class="text-muted small">Overdue (&gt; {{ overdue_days }} day{{ overdue_days|pluralize }})</div><div class="stat-value text-danger" data-count="overdue">{{ counts.overdue }}</div></div></div>
+  <div class="col-4"><div class="stat-card"><div class="text-muted small">Completed today</div><div class="stat-value text-success" data-count="completed_today">{{ counts.completed_today }}</div></div></div>
+</div>
+
+<div class="card widget mb-3">
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <span><i class="bi bi-hourglass-split text-warning"></i> Pending reports <span class="small text-muted">(oldest first)</span></span>
+    <form class="d-flex flex-wrap gap-2" method="get">
+      <input class="form-control form-control-sm" name="q" value="{{ q }}" placeholder="OPD No., name or test" style="min-width:14rem">
+      <select class="form-select form-select-sm w-auto" name="test">
+        <option value="">All tests</option>
+        {% for key, label, words in test_types %}<option value="{{ key }}" {% if test == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-sm btn-primary">Filter</button>
+      {% if q or test %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'lab_dashboard' %}">Clear</a>{% endif %}
+    </form>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0" id="lab-pending">
+      <thead class="table-light"><tr><th>OPD No.</th><th>Patient</th><th>Age / Sex</th><th>Test</th><th>Requested by</th><th>Requested</th><th>Pending for</th><th></th></tr></thead>
+      <tbody>
+      {% for inv in pending %}
+        {% with p=inv.visit.patient %}
+        <tr class="{% if inv.is_overdue %}table-danger lab-overdue{% endif %}" data-investigation="{{ inv.pk }}" data-overdue="{% if inv.is_overdue %}1{% else %}0{% endif %}">
+          <td class="fw-semibold">{{ p.opd_number }}</td>
+          <td><a class="text-decoration-none" href="{% url 'lab_visit' inv.visit_id %}">{{ p.full_name }}</a></td>
+          <td>{{ p.age }} / {{ p.gender }}</td>
+          <td>{{ inv.request_notes|default:"—"|linebreaksbr }}</td>
+          <td class="small">{{ inv.created_by|default:"—" }}</td>
+          <td class="small text-nowrap">{{ inv.created_at|date:"d-M-Y H:i" }}</td>
+          <td class="small text-nowrap">{{ inv.created_at|timesince }}{% if inv.is_overdue %} <span class="badge text-bg-danger">Overdue</span>{% endif %}</td>
+          <td class="text-end">{% if can_upload %}<button type="button" class="btn btn-sm btn-success btn-touch" data-upload-url="{% url 'lab_upload' inv.pk %}"
+                data-patient="{{ p.full_name }} ({{ p.opd_number }})" data-test="{{ inv.request_notes|truncatechars:80 }}"><i class="bi bi-upload"></i> Upload report</button>{% endif %}</td>
+        </tr>
+        {% endwith %}
+      {% empty %}<tr data-empty><td colspan="8" class="text-center text-muted py-4">{% if q or test %}No pending investigations match.{% else %}No pending investigations. 🎉{% endif %}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card widget">
+  <div class="card-header d-flex justify-content-between"><span><i class="bi bi-check2-circle text-success"></i> Recently completed</span>
+    <a class="small" href="{% url 'lab_reports' %}">All reports</a></div>
+  <ul class="list-group list-group-flush">
+    {% for r in recent %}
+    <li class="list-group-item d-flex flex-wrap justify-content-between gap-2 small">
+      <span><strong>{{ r.investigation.visit.patient.full_name }}</strong> <span class="text-muted">{{ r.investigation.visit.patient.opd_number }}</span> — {{ r.investigation.request_notes|truncatechars:50 }}</span>
+      <span><a href="{{ r.file.url }}" target="_blank" rel="noopener"><i class="bi bi-file-earmark"></i> {{ r.filename|truncatechars:24 }}</a>
+        <span class="text-muted">{{ r.created_at|date:"d-M H:i" }}{% if r.created_by %} · {{ r.created_by }}{% endif %}</span></span>
+    </li>
+    {% empty %}<li class="list-group-item small text-muted">No uploads yet.</li>{% endfor %}
+  </ul>
+</div>
+
+<div class="modal fade" id="labUploadModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <form class="modal-content" method="post" enctype="multipart/form-data" id="labUploadForm">{% csrf_token %}
+      <div class="modal-header py-2"><h5 class="modal-title fs-6"><i class="bi bi-upload"></i> Upload report</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+      <div class="modal-body">
+        <div class="fw-semibold" data-upload-patient></div>
+        <div class="small text-muted mb-2" data-upload-test></div>
+        <input type="file" name="report_files" class="form-control mb-2" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple required>
+        <textarea name="remarks" class="form-control" rows="2" placeholder="Remarks (optional)"></textarea>
+        <div class="text-danger small mt-2" data-upload-errors></div>
+      </div>
+      <div class="modal-footer py-2"><button class="btn btn-success" data-upload-submit><i class="bi bi-check2"></i> Upload &amp; mark completed</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'js/lab.js' %}"></script>{% endblock %}

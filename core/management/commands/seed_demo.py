@@ -123,17 +123,62 @@ class Command(BaseCommand):
                     registration_date=today - timedelta(days=120 - index * 7),
                 )
             visit_count = 1 + index % 3
+            previous = None
             for n in range(visit_count):
                 # The last visit of the first few patients is today, for the dashboard.
                 days_ago = 0 if (n == visit_count - 1 and index < 4) else (visit_count - n) * 30 + index
-                self._make_visit(patient, case, today - timedelta(days=days_ago), n, doctor, attender, lab, rng)
+                previous = self._make_visit(patient, case, today - timedelta(days=days_ago), n, doctor, attender, lab,
+                                            rng, previous)
+            # Next appointment: a mix of overdue, due today and upcoming follow-ups.
+            if index >= 4:
+                offset = [-2, 0, 3, 5, 10, 21, -1, 7][index % 8]
+                with acting_as(doctor):
+                    m.ScheduledFollowUp.objects.create(
+                        patient=patient, source_visit=previous, scheduled_by=doctor,
+                        scheduled_date=today + timedelta(days=offset),
+                        notes="Review response to " + case["medicines"][0][0] + ".",
+                    )
+        self._link_family(attender)
+        self._send_prescriptions(doctor, today)
         self.stdout.write(self.style.SUCCESS(f"Created {patients} patients. Demo password: {password}"))
 
-    def _make_visit(self, patient, case, visit_date, n, doctor, attender, lab, rng):
+    def _link_family(self, attender):
+        """A family sharing one mobile number. Manual links: Suresh's mother Lalitha, Suresh's daughter Priya,
+        Lalitha's husband Venkat. Inference then adds Venkat as Suresh's father and Priya's grandfather, etc."""
+        from clinic.relationships import link
+
+        people = {p.full_name: p for p in m.Patient.objects.filter(
+            full_name__in=["Lalitha Devi", "Suresh Kumar", "Priya Sharma", "Venkat Rao"])}
+        if len(people) < 4:
+            return
+        suresh = people["Suresh Kumar"]
+        for name in ("Lalitha Devi", "Priya Sharma", "Venkat Rao"):
+            people[name].phone = suresh.phone
+            people[name].save(update_fields=["phone"])
+        with acting_as(attender):
+            link(suresh, people["Lalitha Devi"], m.Relationship.MOTHER, attender)
+            link(suresh, people["Priya Sharma"], m.Relationship.DAUGHTER, attender)
+            link(people["Lalitha Devi"], people["Venkat Rao"], m.Relationship.SPOUSE, attender)
+
+    def _send_prescriptions(self, doctor, today):
+        """Put two of today's prescriptions into the pharmacy queue."""
+        from clinic.pharmacy import change_status, send_to_pharmacy
+
+        todays = m.Prescription.objects.filter(visit__visit_date=today).select_related("visit")[:2]
+        with acting_as(doctor):
+            for index, rx in enumerate(todays):
+                order, _ = send_to_pharmacy(rx, doctor, keep_open=index > 0)
+                if index == 0:
+                    change_status(order, "start-preparing", doctor)
+
+    def _make_visit(self, patient, case, visit_date, n, doctor, attender, lab, rng, previous=None):
+        today = timezone.localdate()
         with acting_as(attender):
             visit = m.Visit.objects.create(
                 patient=patient, visit_date=visit_date, doctor=doctor,
                 visit_type=m.Visit.Type.NEW if n == 0 else m.Visit.Type.FOLLOW_UP,
+                previous_visit=previous if n else None,
+                status=m.Visit.Status.WAITING if visit_date == today else m.Visit.Status.COMPLETED,
             )
             m.Examination.objects.create(
                 visit=visit, pulse=rng.randint(68, 92), blood_pressure=f"{rng.randint(110, 140)}/{rng.randint(70, 90)}",
@@ -159,6 +204,12 @@ class Command(BaseCommand):
                 fears="Of dark and failure", anxiety="Anticipatory anxiety before exams/work",
                 anger="Irritable when hungry", likes="Music", dislikes="Crowds", sensitivity="To reprimand",
             )
+            if n:
+                m.FollowUpNote.objects.create(
+                    visit=visit, remedy_response=rng.choice(["BETTER", "BETTER", "SAME", "MIXED"]),
+                    changes_since_last="Complaints less frequent; sleep improved.",
+                    notes="Continue same remedy; review in 2 weeks.",
+                )
             m.Diagnosis.objects.create(
                 visit=visit, provisional=case["provisional"], final=case["final"] + (" – improving" if n else ""),
             )
@@ -171,7 +222,9 @@ class Command(BaseCommand):
                                                followup_advice="Review after 15 days.")
             for order, (name, potency, duration, instructions) in enumerate(case["medicines"]):
                 m.PrescriptionItem.objects.create(prescription=rx, medicine_name=name, potency=potency,
-                                                  duration=duration, instructions=instructions, order=order)
+                                                  form=m.MedicineForm.PILLS, quantity="2 dram", dose=instructions,
+                                                  duration=duration, instructions="Avoid coffee and mint",
+                                                  order=order)
             m.FollowUp.objects.create(
                 visit=visit, visit_date=visit_date, progress_notes="Medicine dispensed; patient counselled.",
                 medicines_given=", ".join(f"{i[0]} {i[1]}" for i in case["medicines"]).strip(),
@@ -181,5 +234,6 @@ class Command(BaseCommand):
         if investigation is not None and rng.random() < 0.5:
             with acting_as(lab):
                 investigation.status = m.Investigation.Status.COMPLETED
+                investigation.completed_at = timezone.now()
                 investigation.save()
         return visit

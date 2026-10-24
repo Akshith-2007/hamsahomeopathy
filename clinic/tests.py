@@ -67,7 +67,9 @@ class RbacMatrixTests(ClinicTestCase):
         self.assertTrue(can_view(doctor, "mental_generals"))
         self.assertFalse(can_view(attender, "mental_generals"))
         self.assertFalse(can_view(lab, "prescription"))
-        self.assertTrue(can_view(lab, "diagnosis"))
+        self.assertFalse(can_view(lab, "diagnosis"))
+        self.assertFalse(can_view(lab, "case_record"))
+        self.assertFalse(can_view(lab, "patient"))
         self.assertFalse(can_edit(lab, "diagnosis"))
         self.assertTrue(can_edit(lab, "investigation_reports"))
         self.assertTrue(can_edit(attender, "examination"))
@@ -87,10 +89,7 @@ class CaseRecordViewTests(ClinicTestCase):
         self.assertNotIn('id="sec-diagnosis"', html)
 
         self.login(Role.LAB)
-        html = self.client.get(url).content.decode()
-        self.assertNotIn('id="sec-mental_generals"', html)
-        self.assertNotIn('id="sec-prescription"', html)
-        self.assertIn('id="sec-diagnosis"', html)
+        self.assertRedirects(self.client.get(url), reverse("lab_visit", args=[self.visit.pk]))
 
         self.login(Role.DOCTOR)
         html = self.client.get(url).content.decode()
@@ -136,12 +135,20 @@ class CaseRecordViewTests(ClinicTestCase):
         self.assertFalse(m.PrescriptionItem.objects.exists())
         self.assertEqual(m.Examination.objects.get(visit=self.visit).pulse, 72)
 
-    def test_lab_uploads_report_but_cannot_edit_patient(self):
-        m.Investigation.objects.create(visit=self.visit, request_notes="CBC")
+    def test_lab_cannot_post_case_record(self):
         self.login(Role.LAB)
-        data = self.record_post({"patient-full_name": "Hacked"})
-        data["investigation_files"] = [SimpleUploadedFile("cbc.pdf", PDF, content_type="application/pdf")]
-        response = self.client.post(reverse("visit_record", args=[self.visit.pk]), data)
+        response = self.client.post(reverse("visit_record", args=[self.visit.pk]),
+                                    self.record_post({"patient-full_name": "Hacked"}))
+        self.assertRedirects(response, reverse("lab_visit", args=[self.visit.pk]))
+        self.patient.refresh_from_db()
+        self.assertEqual(self.patient.full_name, "Test Patient")
+
+    def test_lab_uploads_report_from_lab_view(self):
+        investigation = m.Investigation.objects.create(visit=self.visit, request_notes="CBC")
+        self.login(Role.LAB)
+        upload = SimpleUploadedFile("cbc.pdf", PDF, content_type="application/pdf")
+        response = self.client.post(reverse("lab_visit", args=[self.visit.pk]),
+                                    {"investigation": investigation.pk, "report_files": [upload]})
         self.assertEqual(response.status_code, 302)
         self.patient.refresh_from_db()
         self.assertEqual(self.patient.full_name, "Test Patient")
@@ -171,7 +178,10 @@ class CaseRecordViewTests(ClinicTestCase):
         m.MentalGeneral.objects.create(visit=self.visit, fears="Secret fear")
         self.login(Role.LAB)
         response = self.client.get(reverse("visit_summary", args=[self.visit.pk]))
-        self.assertNotContains(response, "Secret fear")
+        self.assertEqual(response.status_code, 403)
+        self.login(Role.ATTENDER)
+        response = self.client.get(reverse("visit_summary", args=[self.visit.pk]))
+        self.assertNotContains(response, "Secret fear", status_code=200)
         self.login(Role.DOCTOR)
         response = self.client.get(reverse("visit_summary", args=[self.visit.pk]))
         self.assertContains(response, "Secret fear")
@@ -236,7 +246,9 @@ class ApiTests(ClinicTestCase):
         lab = self.api(Role.LAB).get(url).json()
         self.assertNotIn("mental_generals", lab)
         self.assertNotIn("prescriptions", lab)
-        self.assertIn("diagnosis", lab)
+        self.assertNotIn("diagnosis", lab)
+        self.assertNotIn("case_history", lab)
+        self.assertIn("investigations", lab)
         doctor = self.api(Role.DOCTOR).get(url).json()
         self.assertEqual(doctor["mental_generals"]["fears"], "x")
 

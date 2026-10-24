@@ -1,0 +1,50 @@
+{% extends "base.html" %}{% load static %}
+{% block title %}History – {{ patient.full_name }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <a href="{% url 'patient_detail' patient.pk %}" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> {{ patient.full_name }}</a>
+    <h1 class="h4 mb-0"><i class="bi bi-clock-history text-primary"></i> Patient history</h1>
+  </div>
+  {% with latest=history.visits.0 %}{% if latest %}<a class="btn btn-primary" href="{% url 'visit_record' latest.pk %}"><i class="bi bi-file-medical"></i> Open latest case sheet</a>{% endif %}{% endwith %}
+</div>
+
+<div class="summary-bar card border-0 shadow-sm mb-3">
+  <div class="card-body py-2 d-flex flex-wrap align-items-center gap-3">
+    <div class="me-2">
+      <div class="fw-bold fs-5 lh-1">{{ patient.full_name }}</div>
+      <div class="small text-muted">{{ patient.opd_number }} · {{ patient.age }} / {{ patient.get_gender_display }}</div>
+    </div>
+    <dl class="summary-facts mb-0">
+      <div><dt>Visits</dt><dd>{{ history.visits|length }}</dd></div>
+      <div><dt>First visit</dt><dd>{{ history.first_visit_date|date:"d-M-Y"|default:"—" }}</dd></div>
+      <div><dt>Last diagnosis</dt><dd>{{ history.last_diagnosis|default:"—" }}</dd></div>
+      <div><dt>Last remedy</dt><dd class="text-success fw-semibold">{{ history.last_remedy|default:"—" }}</dd></div>
+      <div><dt>Next follow-up</dt><dd>{% if history.next_followup %}{{ history.next_followup.scheduled_date|date:"d-M-Y" }}{% else %}—{% endif %}</dd></div>
+    </dl>
+  </div>
+</div>
+
+<form method="get" class="d-flex flex-wrap gap-2 align-items-end mb-2">
+  <div><label class="form-label small mb-0">From</label><input type="date" name="start" class="form-control form-control-sm" value="{{ start|date:'Y-m-d' }}"></div>
+  <div><label class="form-label small mb-0">To</label><input type="date" name="end" class="form-control form-control-sm" value="{{ end|date:'Y-m-d' }}"></div>
+  <button class="btn btn-sm btn-primary">Filter</button>
+  {% if start or end %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'patient_history' patient.pk %}">Clear</a>{% endif %}
+</form>
+
+<div class="card widget"><div class="card-body">{% include "clinic/_timeline.html" %}</div></div>
+
+<div class="modal fade" id="visitModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-clock-history"></i> Visit details</h5>
+        <a class="btn btn-sm btn-outline-primary ms-auto me-2" id="visitModalOpen" href="#">Open full record</a>
+        <button type="button" class="btn-close ms-0" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="visitModalBody"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'js/case_record.js' %}"></script>{% endblock %}

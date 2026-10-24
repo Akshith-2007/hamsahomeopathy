@@ -1,0 +1,45 @@
+{# Doctor/Admin: read-only family history from every active relative (manual and auto-linked). #}
+<div class="family-panel mt-3" id="family-history-panel">
+  <div class="fw-semibold mb-1"><i class="bi bi-diagram-3 text-primary"></i> Family history from linked relatives
+    <span class="small fw-normal text-muted">(read-only, built from the relatives' own records)</span></div>
+
+  {% if family_new_info and access.case_history.edit %}
+  <div class="alert alert-info py-2 small mb-2" id="family-new-info">
+    <div class="fw-semibold"><i class="bi bi-lightbulb"></i> New information from linked relatives:</div>
+    <div class="mb-1" style="white-space:pre-line">{{ family_new_info }}</div>
+    <button type="button" class="btn btn-sm btn-primary" data-insert-family="{{ family_new_info }}"
+            data-target="#{{ forms.case_history.family_history.id_for_label }}" data-dismiss-target="#family-new-info">Add to family history</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-dismiss-target="#family-new-info">Ignore</button>
+  </div>
+  {% endif %}
+
+  {% for group_label, entries in family_groups %}
+  <div class="small text-uppercase text-muted fw-semibold mt-2">{{ group_label }}</div>
+  {% for entry in entries %}
+  <div class="family-row">
+    <div class="d-flex flex-wrap justify-content-between gap-2">
+      <div>
+        <span class="badge text-bg-primary">{{ entry.link.display_label }}</span>
+        <span class="fw-semibold">{{ entry.relative.full_name }}</span>
+        <span class="small text-muted">{{ entry.relative.opd_number }} · {{ entry.relative.age }} / {{ entry.relative.get_gender_display }}</span>
+        {% if entry.path %}<span class="badge text-bg-light border">auto-linked {{ entry.path }}</span>{% endif %}
+      </div>
+      <div class="small d-flex flex-wrap align-items-center gap-2">
+        <span><span class="text-muted">Last visit:</span> {{ entry.last_visit.visit_date|date:"d-M-Y"|default:"—" }}</span>
+        <a target="_blank" rel="noopener" href="{% if entry.last_visit %}{% url 'visit_record' entry.last_visit.pk %}{% else %}{% url 'patient_detail' entry.relative.pk %}{% endif %}?from={{ patient.pk }}&back_visit={{ visit.pk }}"><i class="bi bi-box-arrow-up-right"></i> Open record</a>
+        {% if access.family_consult.edit %}
+        <button type="submit" form="consult-{{ entry.relative.pk }}" formtarget="_blank" class="btn btn-sm btn-outline-success">
+          <i class="bi bi-capsule"></i> Consult &amp; prescribe for {{ entry.relative.full_name }}</button>
+        {% endif %}
+      </div>
+    </div>
+    <div class="small mt-1">
+      {% for text, date in entry.diagnoses %}<span class="dx-chip">{{ text }} <span class="text-muted">{{ date|date:"M Y" }}</span></span>{% empty %}<span class="text-muted">No diagnoses recorded.</span>{% endfor %}
+    </div>
+    {% if entry.chronic %}<div class="small text-muted mt-1">{% for note in entry.chronic %}<div>{{ note }}</div>{% endfor %}</div>{% endif %}
+  </div>
+  {% endfor %}
+  {% empty %}
+  <div class="small text-muted">No relatives are linked to this patient. Reception can link family members from the patient page.</div>
+  {% endfor %}
+</div>

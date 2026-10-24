@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Pharmacy{% endblock %}
+{% block container %}container-fluid px-lg-4{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h4 mb-0"><i class="bi bi-capsule text-success"></i> Pharmacy queue</h1>
+  <div class="small text-muted"><i class="bi bi-arrow-repeat"></i> Updates automatically when the doctor sends a prescription</div>
+</div>
+
+<div class="row g-3" data-pharmacy-queue>
+  {% for key, label, color, icon, orders in stages %}
+  <div class="col-md-6 col-xxl-3">
+    <div class="pharmacy-column">
+      <div class="pharmacy-column-head text-{{ color }}"><i class="bi {{ icon }}"></i> {{ label }} <span class="badge rounded-pill text-bg-{{ color }}">{{ orders|length }}</span></div>
+      {% for order in orders %}
+      <div class="card order-card mb-2 {% if order.is_update and key != 'dispensed' %}order-updated{% endif %}" id="order-{{ order.pk }}">
+        <div class="card-body p-2">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <div>
+              <div class="fw-semibold fs-6">{{ order.patient.full_name }}</div>
+              <div class="small text-muted">{{ order.patient.opd_number }} · {{ order.patient.age }} / {{ order.patient.get_gender_display }}</div>
+            </div>
+            <div class="text-end small">
+              {% if order.is_update %}<span class="badge text-bg-warning">Updated prescription</span><br>{% endif %}
+              <span class="text-muted" title="{{ order.sent_at|date:'d-M-Y H:i' }}">{{ order.sent_at|time:"H:i" }} · {{ order.sent_at|timesince }} ago</span>
+            </div>
+          </div>
+          <div class="small text-muted mb-1">{% firstof order.visit.doctor order.sent_by %} · v{{ order.version }}</div>
+          {% if order.collect_by %}
+          <div class="pickup-note"><i class="bi bi-bag"></i> <strong>Collect by:</strong> {{ order.collect_by.full_name }} ({{ order.collect_by_label }})
+            <span class="badge text-bg-info">Same pickup as {{ order.collect_by.full_name }}</span></div>
+          {% endif %}
+          {% if order.collects_for %}
+          <div class="pickup-note"><i class="bi bi-bag-plus"></i> Also collecting for:
+            {% for other in order.collects_for %}<a href="#order-{{ other.pk }}">{{ other.patient.full_name }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+          {% endif %}
+          <table class="table table-sm mb-1 order-items">
+            <tbody>
+            {% for item in order.items.all %}
+              <tr class="{% if item.change == 'ADDED' %}item-added{% elif item.change == 'CHANGED' %}item-changed{% endif %}">
+                <td><span class="fw-semibold">{{ item.medicine_name }}</span> {{ item.potency }}
+                  {% if item.change %}<span class="badge {% if item.change == 'ADDED' %}text-bg-success{% else %}text-bg-warning{% endif %}">{{ item.get_change_display }}</span>{% endif %}
+                  <div class="small text-muted">{% if item.form %}{{ item.form_display }}{% endif %}{% if item.quantity %} · {{ item.quantity }}{% endif %}{% if item.dose %} · {{ item.dose }}{% endif %}{% if item.duration %} · {{ item.duration }}{% endif %}</div>
+                  {% if item.instructions %}<div class="small">{{ item.instructions }}</div>{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+            {% for removed in order.removed_items %}<tr class="item-removed"><td><s>{{ removed }}</s> <span class="badge text-bg-danger">Removed</span></td></tr>{% endfor %}
+            </tbody>
+          </table>
+          <div class="d-flex flex-wrap gap-1">
+            {% if can_update %}
+              {% if order.status == 'SENT' %}
+              <form method="post" action="{% url 'pharmacy_action' order.pk 'start-preparing' %}">{% csrf_token %}<button class="btn btn-warning btn-touch"><i class="bi bi-hourglass-split"></i> Start preparing</button></form>
+              {% endif %}
+              {% if order.status == 'SENT' or order.status == 'PREPARING' %}
+              <form method="post" action="{% url 'pharmacy_action' order.pk 'mark-ready' %}">{% csrf_token %}<button class="btn btn-success btn-touch"><i class="bi bi-bag-check"></i> Mark ready</button></form>
+              {% endif %}
+              {% if order.status == 'READY' %}
+              <form method="post" action="{% url 'pharmacy_action' order.pk 'mark-dispensed' %}">{% csrf_token %}<button class="btn btn-primary btn-touch"><i class="bi bi-check2-all"></i> Mark dispensed</button></form>
+              {% endif %}
+            {% endif %}
+            <div class="btn-group">
+              <a class="btn btn-outline-secondary btn-touch" href="{% url 'pharmacy_label' order.pk %}" target="_blank" title="Print slip (A4)"><i class="bi bi-printer"></i> Slip</a>
+              <a class="btn btn-outline-secondary btn-touch" href="{% url 'pharmacy_label' order.pk %}?size=label" target="_blank" title="Print small labels"><i class="bi bi-tag"></i> Labels</a>
+            </div>
+            {% if can_update and order.is_active %}
+            <form method="post" action="{% url 'pharmacy_action' order.pk 'cancel' %}" class="ms-auto" data-confirm="Cancel this order for {{ order.patient.full_name }}?">{% csrf_token %}<button class="btn btn-link text-danger btn-sm">Cancel</button></form>
+            {% endif %}
+          </div>
+          {% if key == 'dispensed' %}<div class="small text-muted mt-1">Dispensed {{ order.dispensed_at|time:"H:i" }}{% if order.dispensed_by %} by {{ order.dispensed_by }}{% endif %}</div>{% endif %}
+        </div>
+      </div>
+      {% empty %}<div class="text-muted small p-2">Nothing here.</div>{% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -5,12 +5,12 @@ from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db import connection
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.views.decorators.cache import never_cache
 from django.views.static import serve
 
-from accounts.models import Role
-from accounts.rbac import can_view, role_required
+from accounts.rbac import can_view, can_view_report, home_view_name, section_required
+from clinic.models import InvestigationReport
 from clinic.views import dashboard_context
 
 from .models import AuditLog
@@ -27,6 +27,13 @@ MEDIA_SECTIONS = {
 
 @login_required
 def home(request):
+    target = home_view_name(request.user)
+    if target == "lab_dashboard":
+        from clinic.views import lab_dashboard
+
+        return lab_dashboard(request)  # the lab's home page *is* its dashboard
+    if target != "home":
+        return redirect(target)
     return render(request, "core/home.html", dashboard_context(request.user))
 
 
@@ -38,6 +45,10 @@ def protected_media(request, path):
         section = MEDIA_SECTIONS.get(parts[2])
         if section is None or not can_view(request.user, section):
             raise PermissionDenied
+        if section == "investigation_reports":
+            report = InvestigationReport.objects.filter(file=path).first()
+            if report is None or not can_view_report(request.user, report):
+                raise PermissionDenied
     elif parts[0] != "signatures":
         raise PermissionDenied
     response = serve(request, path, document_root=settings.MEDIA_ROOT)
@@ -45,7 +56,7 @@ def protected_media(request, path):
     return response
 
 
-@role_required(Role.ADMIN)
+@section_required("audit_log")
 def audit_list(request):
     logs = AuditLog.objects.select_related("user")
     filters = {

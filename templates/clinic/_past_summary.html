@@ -1,0 +1,24 @@
+{# Doctor/Admin: read-only past history summary, built live from earlier visits (not stored). #}
+{% if past_summary.diagnoses or past_summary.remedies or past_summary.investigations %}
+<div class="past-summary mb-3" id="past-history-summary">
+  <div class="fw-semibold mb-1"><i class="bi bi-clock-history text-primary"></i> Past history summary
+    <span class="small fw-normal text-muted">(from earlier visits)</span></div>
+  <div class="row g-2 small">
+    <div class="col-lg-4">
+      <div class="tl-label">Diagnoses</div>
+      {% for d in past_summary.diagnoses %}<div><span class="fw-semibold">{{ d.text }}</span> <span class="text-muted">{% for when in d.dates %}{{ when|date:"M Y" }}{% if not forloop.last %}, {% endif %}{% endfor %}</span></div>{% empty %}<div class="text-muted">—</div>{% endfor %}
+    </div>
+    <div class="col-lg-4">
+      <div class="tl-label">Remedies</div>
+      {% for r in past_summary.remedies %}<div><span class="fw-semibold">{{ r.text }}</span> <span class="text-muted">{% for when in r.dates %}{{ when|date:"d M Y" }}{% if not forloop.last %}, {% endif %}{% endfor %}</span></div>{% empty %}<div class="text-muted">—</div>{% endfor %}
+    </div>
+    <div class="col-lg-4">
+      <div class="tl-label">Investigations</div>
+      {% for v, inv in past_summary.investigations %}
+        <div><span class="text-muted">{{ inv.requested_date|date:"d M Y" }}</span> {{ inv.request_notes|default:"—"|truncatechars:50 }}
+          {% for r in inv.reports.all %}<a href="{{ r.file.url }}" target="_blank" rel="noopener" class="ms-1"><i class="bi bi-file-earmark{% if r.is_pdf %}-pdf{% endif %}"></i></a>{% endfor %}</div>
+      {% empty %}<div class="text-muted">—</div>{% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}

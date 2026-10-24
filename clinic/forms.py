@@ -32,6 +32,50 @@ class VisitForm(BootstrapMixin, forms.ModelForm):
         self.fields["doctor"].queryset = get_user_model().objects.filter(role=Role.DOCTOR, is_active=True)
 
 
+class RegistrationVisitForm(BootstrapMixin, forms.ModelForm):
+    """Visit details captured while registering a new patient (always a New case)."""
+
+    class Meta:
+        model = m.Visit
+        fields = ["visit_date", "doctor"]
+        widgets = {"visit_date": DATE}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["doctor"].queryset = get_user_model().objects.filter(role=Role.DOCTOR, is_active=True)
+
+
+class FollowUpNoteForm(BootstrapMixin, forms.ModelForm):
+    class Meta:
+        model = m.FollowUpNote
+        exclude = ["visit"]
+        widgets = {
+            "changes_since_last": forms.Textarea(attrs={"rows": 3, "placeholder": "What has changed since the last visit?"}),
+            "notes": forms.Textarea(attrs={"rows": 3, "placeholder": "Doctor's notes for this follow-up"}),
+        }
+
+
+TIME = forms.TimeInput(attrs={"type": "time"}, format="%H:%M")
+
+
+class ScheduleFollowUpForm(BootstrapMixin, forms.Form):
+    scheduled_date = forms.DateField(label="Date", widget=DATE)
+    scheduled_time = forms.TimeField(label="Time", required=False, widget=TIME)
+    notes = forms.CharField(label="Notes for the doctor", required=False,
+                            widget=forms.Textarea(attrs={"rows": 2, "placeholder": "Optional clinical notes"}))
+    replace = forms.BooleanField(required=False, widget=forms.HiddenInput)
+
+    def __init__(self, *args, show_notes=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not show_notes:
+            del self.fields["notes"]
+
+
+class RescheduleFollowUpForm(BootstrapMixin, forms.Form):
+    scheduled_date = forms.DateField(label="New date", widget=DATE)
+    scheduled_time = forms.TimeField(label="Time", required=False, widget=TIME)
+
+
 class CaseHistoryForm(BootstrapMixin, forms.ModelForm):
     class Meta:
         model = m.CaseHistory
@@ -137,11 +181,13 @@ class PrescriptionForm(BootstrapMixin, forms.ModelForm):
 class PrescriptionItemForm(BootstrapMixin, forms.ModelForm):
     class Meta:
         model = m.PrescriptionItem
-        fields = ["medicine_name", "potency", "duration", "instructions"]
+        fields = ["medicine_name", "potency", "form", "quantity", "dose", "duration", "instructions"]
         widgets = {
             "medicine_name": forms.TextInput(attrs={"placeholder": "Enter medicine name", "list": "medicine-list"}),
-            "duration": forms.TextInput(attrs={"placeholder": "Enter duration"}),
-            "instructions": forms.TextInput(attrs={"placeholder": "e.g. 5 drops, 3 times daily"}),
+            "quantity": forms.TextInput(attrs={"placeholder": "2 dram"}),
+            "dose": forms.TextInput(attrs={"placeholder": "4 pills, 3 times daily"}),
+            "duration": forms.TextInput(attrs={"placeholder": "7 days"}),
+            "instructions": forms.TextInput(attrs={"placeholder": "e.g. empty stomach, avoid coffee"}),
         }
 
 
@@ -186,6 +232,23 @@ def formset_for(model, parent, form, rows):
     return inlineformset_factory(
         parent, model, form=form, formset=OrderedInlineFormSet, extra=rows, can_delete=True,
     )
+
+
+class RelationshipForm(BootstrapMixin, forms.Form):
+    relationship = forms.ChoiceField(label="This relative is the patient's")
+    label = forms.CharField(label="Describe (for Other)", required=False, max_length=60)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from .relationships import CHOICES
+
+        self.fields["relationship"].choices = CHOICES
+
+    def clean(self):
+        data = super().clean()
+        if data.get("relationship") == m.Relationship.OTHER and not data.get("label"):
+            self.add_error("label", "Describe the relationship (e.g. Cousin).")
+        return data
 
 
 class PatientSearchForm(forms.Form):

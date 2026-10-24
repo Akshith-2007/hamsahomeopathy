@@ -1,0 +1,19 @@
+{# Doctor/Admin patient summary bar; needs `history` (PatientHistory) and `visit`. #}
+<div class="summary-bar card border-0 shadow-sm mb-3">
+  <div class="card-body py-2 d-flex flex-wrap align-items-center gap-3">
+    <div class="me-2">
+      <div class="fw-bold fs-5 lh-1">{{ patient.full_name }}</div>
+      <div class="small text-muted">{{ patient.opd_number }} · {{ patient.age }} / {{ patient.get_gender_display }}</div>
+    </div>
+    <div><span class="badge fs-6 {% if visit.visit_type == 'NEW' %}text-bg-info{% else %}text-bg-secondary{% endif %}">{{ visit.get_visit_type_display }}</span>
+      <span class="badge fs-6 text-bg-dark">Visit {{ history.visit_number }}</span>
+      {% if visit.consultation_mode == 'THROUGH_FAMILY' %}<span class="badge fs-6 text-bg-warning"><i class="bi bi-telephone-forward"></i> Through family</span>{% endif %}</div>
+    <dl class="summary-facts mb-0">
+      <div><dt>First visit</dt><dd>{{ history.first_visit_date|date:"d-M-Y"|default:"—" }}</dd></div>
+      <div><dt>Last visit</dt><dd>{% if history.last_visit %}{{ history.last_visit.visit_date|date:"d-M-Y" }}{% else %}—{% endif %}</dd></div>
+      <div><dt>Last diagnosis</dt><dd>{{ history.last_diagnosis|default:"—" }}</dd></div>
+      <div><dt>Last remedy</dt><dd class="text-success fw-semibold">{{ history.last_remedy|default:"—" }}</dd></div>
+      <div><dt>Next follow-up</dt><dd>{% if history.next_followup %}<span class="{% if history.next_followup.is_overdue %}text-danger{% endif %}">{{ history.next_followup.scheduled_date|date:"d-M-Y" }}{% if history.next_followup.scheduled_time %} {{ history.next_followup.scheduled_time|time:"H:i" }}{% endif %}</span>{% else %}—{% endif %}</dd></div>
+    </dl>
+  </div>
+</div>

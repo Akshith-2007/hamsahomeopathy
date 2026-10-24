@@ -21,13 +21,42 @@ class AuditLog(models.Model):
         UNLOCK = "UNLOCK", "Unlock user"
         PASSWORD_RESET = "PASSWORD_RESET", "Password reset"
         EXPORT = "EXPORT", "Export"
+        CHECK_IN = "CHECK_IN", "Check-in"
+        VISIT_TYPE_CHANGED = "VISIT_TYPE_CHANGED", "Visit type changed"
+        FOLLOWUP_SCHEDULED = "FOLLOWUP_SCHEDULED", "Follow-up scheduled"
+        FOLLOWUP_RESCHEDULED = "FOLLOWUP_RESCHEDULED", "Follow-up rescheduled"
+        FOLLOWUP_CANCELLED = "FOLLOWUP_CANCELLED", "Follow-up cancelled"
+        FOLLOWUP_COMPLETED = "FOLLOWUP_COMPLETED", "Follow-up completed"
+        FOLLOWUP_MISSED = "FOLLOWUP_MISSED", "Follow-up missed"
+        PRESCRIPTION_REPEATED = "PRESCRIPTION_REPEATED", "Prescription repeated"
+        PATIENT_SAVED_NO_CASE_SHEET = "PATIENT_SAVED_NO_CASE_SHEET", "Patient saved without case sheet"
+        RELATIONSHIP_LINKED = "RELATIONSHIP_LINKED", "Relative linked"
+        RELATIONSHIP_EDITED = "RELATIONSHIP_EDITED", "Relationship edited"
+        RELATIONSHIP_REMOVED = "RELATIONSHIP_REMOVED", "Relative unlinked"
+        FAMILY_HISTORY_INSERTED = "FAMILY_HISTORY_INSERTED", "Family history inserted"
+        PRESCRIPTION_SENT = "PRESCRIPTION_SENT", "Prescription sent to pharmacy"
+        PRESCRIPTION_RESENT = "PRESCRIPTION_RESENT", "Prescription re-sent to pharmacy"
+        PRESCRIPTION_UPDATED = "PRESCRIPTION_UPDATED", "Updated prescription sent to pharmacy"
+        DISPENSE_STATUS_CHANGED = "DISPENSE_STATUS_CHANGED", "Dispense status changed"
+        LABEL_PRINTED = "LABEL_PRINTED", "Dispensing label printed"
+        RELATIONSHIP_INFERRED = "RELATIONSHIP_INFERRED", "Relative auto-linked"
+        RELATIONSHIP_CONFIRMED = "RELATIONSHIP_CONFIRMED", "Auto-link confirmed"
+        RELATIONSHIP_REJECTED = "RELATIONSHIP_REJECTED", "Auto-link rejected"
+        RELATIONSHIP_UNREJECTED = "RELATIONSHIP_UNREJECTED", "Rejected auto-link restored"
+        INFERENCE_CONFLICT = "INFERENCE_CONFLICT", "Family inference conflict"
+        HISTORY_PREFILLED = "HISTORY_PREFILLED", "History pre-filled"
+        FAMILY_HISTORY_AUTOFILLED = "FAMILY_HISTORY_AUTOFILLED", "Family history auto-filled"
+        VISIT_THROUGH_FAMILY = "VISIT_THROUGH_FAMILY", "Visit created through family member"
+        COLLECT_BY_ORDER = "COLLECT_BY_ORDER", "Collect-by pharmacy order"
+        REPORT_UPLOADED = "REPORT_UPLOADED", "Lab report uploaded"
+        REPORT_CORRECTED = "REPORT_CORRECTED", "Lab report corrected"
 
     timestamp = models.DateTimeField(default=timezone.now, db_index=True)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_logs"
     )
     username = models.CharField(max_length=150, blank=True)
-    action = models.CharField(max_length=20, choices=Action.choices, db_index=True)
+    action = models.CharField(max_length=40, choices=Action.choices, db_index=True)
     model_name = models.CharField(max_length=100, blank=True, db_index=True)
     object_id = models.CharField(max_length=64, blank=True)
     object_repr = models.CharField(max_length=255, blank=True)
@@ -144,3 +173,33 @@ class AuditedModel(models.Model):
 
     def hard_delete(self):
         return super().delete()
+
+
+
+class Notification(models.Model):
+    """In-app message for one user (delivered by polling; see core.inbox)."""
+
+    class Kind(models.TextChoices):
+        PRESCRIPTION_SENT = "PRESCRIPTION_SENT", "New prescription"
+        PRESCRIPTION_UPDATED = "PRESCRIPTION_UPDATED", "Updated prescription"
+        REPORT_READY = "REPORT_READY", "Report ready"
+        REPORT_CORRECTED = "REPORT_CORRECTED", "Corrected report"
+        GENERAL = "GENERAL", "General"
+
+    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications")
+    kind = models.CharField(max_length=24, choices=Kind.choices, default=Kind.GENERAL)
+    title = models.CharField(max_length=150)
+    message = models.CharField(max_length=500, blank=True)
+    url = models.CharField(max_length=255, blank=True)
+    target_model = models.CharField(max_length=100, blank=True)
+    target_id = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    read_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        db_table = "notifications"
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["recipient", "read_at"], name="notif_recipient_unread")]
+
+    def __str__(self):
+        return f"{self.recipient} – {self.title}"

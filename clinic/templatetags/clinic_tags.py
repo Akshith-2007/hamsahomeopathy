@@ -38,3 +38,14 @@ def url_replace(context, **kwargs):
 def bound(form, name):
     """{{ form|bound:"field_name" }} -> the BoundField."""
     return form[name]
+
+
+@register.filter
+def dict_items(value):
+    """Safe `.items()` for templates: a key named "items" would shadow the method in `x.items`."""
+    return list(value.items()) if isinstance(value, dict) else []
+
+
+@register.filter
+def is_dict(value):
+    return isinstance(value, dict)

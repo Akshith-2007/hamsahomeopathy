@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Reports – {{ patient.opd_number }}{% endblock %}
+{% block content %}
+<a href="{% url 'lab_reports' %}" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Previous reports</a>
+<div class="card border-0 shadow-sm my-2">
+  <div class="card-body d-flex flex-wrap gap-4 align-items-center">
+    <div><div class="small text-muted">OPD No.</div><div class="fw-semibold">{{ patient.opd_number }}</div></div>
+    <div><div class="small text-muted">Patient</div><div class="fw-semibold">{{ patient.full_name }}</div></div>
+    <div><div class="small text-muted">Age / Sex</div><div>{{ patient.age }} / {{ patient.get_gender_display }}</div></div>
+  </div>
+</div>
+<h1 class="h5 mb-2"><i class="bi bi-clock-history text-primary"></i> Report history <span class="small text-muted fw-normal">(investigations only)</span></h1>
+<div class="card border-0 shadow-sm"><div class="table-responsive">
+<table class="table table-sm align-middle mb-0">
+  <thead class="table-light"><tr><th>Requested</th><th>Test</th><th>Requested by</th><th>Status</th><th>Completed</th><th>Reports</th></tr></thead>
+  <tbody>
+  {% for inv in investigations %}
+    <tr>
+      <td class="text-nowrap">{{ inv.requested_date|date:"d-M-Y" }}</td>
+      <td>{{ inv.request_notes|default:"—"|linebreaksbr }}</td>
+      <td class="small">{{ inv.created_by|default:"—" }}</td>
+      <td><span class="badge text-bg-{% if inv.status == 'COMPLETED' %}success{% else %}warning{% endif %}">{{ inv.get_status_display }}</span></td>
+      <td class="small">{{ inv.completed_at|date:"d-M-Y H:i"|default:"—" }}</td>
+      <td class="small">
+        {% for r in inv.visible_reports %}
+        <div class="{% if r.status == 'SUPERSEDED' %}text-muted{% endif %}">
+          <a href="{{ r.file.url }}" target="_blank" rel="noopener"><i class="bi bi-file-earmark"></i> {{ r.filename|truncatechars:22 }}</a>
+          {% if r.version > 1 %}<span class="badge text-bg-info">v{{ r.version }}</span>{% endif %}
+          {% if r.status == 'SUPERSEDED' %}<span class="badge text-bg-secondary">Superseded</span>{% endif %}
+          <span class="text-muted">{{ r.created_at|date:"d-M-Y" }}</span>
+          {% if can_correct and r.status == 'CURRENT' %}{% include "clinic/_report_correct.html" %}{% endif %}
+        </div>
+        {% empty %}<span class="text-muted">—</span>{% endfor %}
+      </td>
+    </tr>
+  {% empty %}<tr><td colspan="6" class="text-center text-muted py-4">No investigations for this patient.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

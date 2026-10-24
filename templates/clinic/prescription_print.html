@@ -45,11 +45,11 @@
   <div class="rx">℞</div>
   {% if prescription %}
   <table class="table table-sm align-middle">
-    <thead class="table-light"><tr><th>#</th><th>Medicine</th><th>Potency</th><th>Duration</th><th>Instructions</th></tr></thead>
+    <thead class="table-light"><tr><th>#</th><th>Medicine</th><th>Potency</th><th>Form / qty</th><th>Dose</th><th>Duration</th><th>Instructions</th></tr></thead>
     <tbody>
     {% for item in prescription.items.all %}
-      <tr><td>{{ forloop.counter }}</td><td class="fw-semibold">{{ item.medicine_name }}</td><td>{{ item.potency }}</td><td>{{ item.duration }}</td><td>{{ item.instructions }}</td></tr>
-    {% empty %}<tr><td colspan="5" class="text-muted">No medicines entered.</td></tr>{% endfor %}
+      <tr><td>{{ forloop.counter }}</td><td class="fw-semibold">{{ item.medicine_name }}</td><td>{{ item.potency }}</td><td>{{ item.get_form_display }} {{ item.quantity }}</td><td>{{ item.dose }}</td><td>{{ item.duration }}</td><td>{{ item.instructions }}</td></tr>
+    {% empty %}<tr><td colspan="7" class="text-muted">No medicines entered.</td></tr>{% endfor %}
     </tbody>
   </table>
   {% if prescription.dietary_advice %}<p class="mb-1"><strong>Dietary advice:</strong> {{ prescription.dietary_advice|linebreaksbr }}</p>{% endif %}

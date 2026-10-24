@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% load clinic_tags %}
 {% block title %}Audit log{% endblock %}
 {% block container %}container-fluid px-lg-4{% endblock %}
 {% block content %}
@@ -24,7 +24,7 @@
       <td style="max-width:32rem">
         {% if log.changes %}
         <details><summary>{{ log.changes|length }} field{{ log.changes|length|pluralize }}</summary>
-          <ul class="mb-0 ps-3">{% for key, value in log.changes.items %}<li><code>{{ key }}</code>: {% if value.items %}<span class="text-danger">{{ value.old|default:"∅" }}</span> → <span class="text-success">{{ value.new|default:"∅" }}</span>{% else %}{{ value }}{% endif %}</li>{% endfor %}</ul>
+          <ul class="mb-0 ps-3">{% for key, value in log.changes|dict_items %}<li><code>{{ key }}</code>: {% if value|is_dict %}<span class="text-danger">{{ value.old|default:"∅" }}</span> → <span class="text-success">{{ value.new|default:"∅" }}</span>{% else %}{{ value }}{% endif %}</li>{% endfor %}</ul>
         </details>
         {% endif %}
       </td>

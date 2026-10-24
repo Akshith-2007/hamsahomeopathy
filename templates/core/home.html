@@ -17,11 +17,11 @@
       <span class="tile-go"><i class="bi bi-chevron-right"></i></span>
     </a>
   </div>
-  {% if can_register %}
+  {% if nav.checkin.edit %}
   <div class="col-md-6">
-    <a class="tile tile-green" href="{% url 'patient_create' %}">
+    <a class="tile tile-green" href="{% url 'checkin' %}#new-case">
       <span class="tile-icon"><i class="bi bi-person-fill-add"></i></span>
-      <span class="tile-label">New patient</span>
+      <span class="tile-label">New patient / New case</span>
       <span class="tile-go"><i class="bi bi-chevron-right"></i></span>
     </a>
   </div>
@@ -33,6 +33,7 @@
     </a>
   </div>
   {% endif %}
+  {% if nav.patient.view %}
   <div class="col-md-6">
     <a class="tile tile-orange" href="{% url 'patient_list' %}">
       <span class="tile-icon"><i class="bi bi-search"></i></span>
@@ -40,7 +41,8 @@
       <span class="tile-go"><i class="bi bi-chevron-right"></i></span>
     </a>
   </div>
-  {% if is_clinical %}
+  {% endif %}
+  {% if nav.reports.view %}
   <div class="col-md-6">
     <a class="tile tile-pink" href="{% url 'reports' %}">
       <span class="tile-icon"><i class="bi bi-bar-chart-fill"></i></span>
@@ -53,51 +55,104 @@
 
 <div id="dashboard-widgets">
   <div class="row g-3 mb-3">
-    <div class="col-6 col-lg-3"><div class="stat-card"><div class="text-muted small">Registered patients</div><div class="stat-value">{{ stats.patients }}</div></div></div>
-    <div class="col-6 col-lg-3"><div class="stat-card"><div class="text-muted small">Today's visits</div><div class="stat-value text-primary">{{ stats.today }}</div></div></div>
-    <div class="col-6 col-lg-3"><div class="stat-card"><div class="text-muted small">Pending lab reports</div><div class="stat-value text-warning">{{ stats.pending_labs }}</div></div></div>
-    {% if stats.followups is not None %}
-    <div class="col-6 col-lg-3"><div class="stat-card"><div class="text-muted small">Follow-ups (next 7 days)</div><div class="stat-value text-success">{{ stats.followups }}</div></div></div>
+    {% if stats.today is not None %}
+    <div class="col-6 col-lg"><div class="stat-card"><div class="text-muted small">Today's visits</div><div class="stat-value text-primary">{{ stats.today }}</div></div></div>
+    <div class="col-6 col-lg"><div class="stat-card"><div class="text-muted small">Waiting now</div><div class="stat-value text-warning">{{ stats.waiting }}</div></div></div>
     {% endif %}
+    {% if stats.followups is not None %}
+    <div class="col-6 col-lg"><div class="stat-card"><div class="text-muted small">Follow-ups (today + 7 days)</div><div class="stat-value text-success">{{ stats.followups }}</div></div></div>
+    <div class="col-6 col-lg"><div class="stat-card"><div class="text-muted small">Overdue follow-ups</div><div class="stat-value text-danger">{{ stats.overdue_followups }}</div></div></div>
+    {% endif %}
+    <div class="col-6 col-lg"><div class="stat-card"><div class="text-muted small">Pending lab reports</div><div class="stat-value">{{ stats.pending_labs }}</div></div></div>
   </div>
 
   <div class="row g-3">
-    <div class="col-lg-6">
+    {% if today_visits is not None %}
+    <div class="col-xl-6">
       <div class="card widget h-100">
-        <div class="card-header"><i class="bi bi-calendar-day text-primary"></i> Today's patients</div>
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-calendar-day text-primary"></i> Today's patients</span>
+          {% if nav.checkin.edit %}<a class="btn btn-sm btn-outline-success" href="{% url 'checkin' %}"><i class="bi bi-door-open"></i> Check-in</a>{% endif %}
+        </div>
         <div class="list-group list-group-flush">
           {% for v in today_visits %}
-          <a class="list-group-item list-group-item-action d-flex justify-content-between" href="{% url 'visit_record' v.pk %}">
-            <span><strong>{{ v.patient.full_name }}</strong> <span class="text-muted small">{{ v.patient.opd_number }}</span></span>
-            <span class="small text-muted">{{ v.get_visit_type_display }}{% if v.doctor %} · {{ v.doctor }}{% endif %}</span>
-          </a>
-          {% empty %}<div class="list-group-item text-muted small">No visits recorded today.</div>{% endfor %}
-        </div>
-      </div>
-    </div>
-
-    {% if upcoming_followups is not None %}
-    <div class="col-lg-6">
-      <div class="card widget h-100">
-        <div class="card-header"><i class="bi bi-calendar-check text-success"></i> Upcoming follow-ups</div>
-        <div class="list-group list-group-flush">
-          {% for f in upcoming_followups %}
-          <a class="list-group-item list-group-item-action d-flex justify-content-between" href="{% url 'patient_detail' f.visit.patient_id %}">
-            <span><strong>{{ f.visit.patient.full_name }}</strong> <span class="text-muted small">{{ f.visit.patient.phone }}</span></span>
-            <span class="badge text-bg-light border">{{ f.next_followup_date|date:"d M" }}</span>
-          </a>
-          {% empty %}<div class="list-group-item text-muted small">No follow-ups due in the next 7 days.</div>{% endfor %}
+          <div class="list-group-item d-flex justify-content-between align-items-center gap-2">
+            <div class="min-w-0">
+              <strong>{{ v.patient.full_name }}</strong> <span class="text-muted small">{{ v.patient.opd_number }}</span>
+              <div class="small">
+                <span class="badge {% if v.visit_type == 'NEW' %}text-bg-info{% else %}text-bg-secondary{% endif %}">{% if v.visit_type == 'NEW' %}New{% else %}Follow-up{% endif %}</span>
+{% if v.consultation_mode == 'THROUGH_FAMILY' %}<span class="badge text-bg-warning" title="Reported by {{ v.reported_by.full_name }}"><i class="bi bi-telephone-forward"></i> Through family</span>{% endif %}
+                <span class="badge {% if v.status == 'WAITING' %}text-bg-warning{% elif v.status == 'IN_CONSULTATION' %}text-bg-primary{% else %}text-bg-light border{% endif %}">{{ v.get_status_display }}</span>
+                {% with order=v.orders.0 %}{% if order %}<span class="badge pharmacy-{{ order.status|lower }}">Pharmacy: {{ order.get_status_display }}</span>{% endif %}{% endwith %}
+                {% if v.doctor %}<span class="text-muted">· {{ v.doctor }}</span>{% endif %}
+              </div>
+            </div>
+            <a class="btn btn-sm {% if v.status == 'COMPLETED' %}btn-outline-secondary{% else %}btn-primary{% endif %} text-nowrap" href="{% url 'visit_record' v.pk %}"><i class="bi bi-file-medical"></i> Open case sheet</a>
+          </div>
+          {% empty %}<div class="list-group-item text-muted small">No patients checked in today.</div>{% endfor %}
         </div>
       </div>
     </div>
     {% endif %}
 
-    <div class="col-lg-6">
+    {% if pharmacy_stages %}
+    <div class="col-xl-6">
+      <div class="card widget h-100">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-capsule text-success"></i> Pharmacy</span>
+          <a class="btn btn-sm btn-success" href="{% url 'pharmacy_queue' %}">Open queue</a>
+        </div>
+        <div class="card-body p-0">
+          {% for key, label, color, orders in pharmacy_stages %}
+          <div class="px-3 pt-2 small fw-semibold text-{{ color }}">{{ label }} <span class="badge rounded-pill text-bg-{{ color }}">{{ orders|length }}</span></div>
+          <ul class="list-group list-group-flush mb-1">
+            {% for order in orders|slice:":5" %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+              <span><strong>{{ order.patient.full_name }}</strong> <span class="small text-muted">{{ order.patient.opd_number }}</span>
+                {% if order.is_update %}<span class="badge text-bg-warning">Updated</span>{% endif %}</span>
+              <a class="small" href="{% url 'pharmacy_queue' %}#order-{{ order.pk }}">{{ order.sent_at|time:"H:i" }} · {{ order.items.all|length }} item(s)</a>
+            </li>
+            {% empty %}<li class="list-group-item small text-muted">None</li>{% endfor %}
+          </ul>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if followup_buckets %}
+    <div class="col-xl-6">
+      <div class="card widget h-100">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-calendar-check text-success"></i> Upcoming follow-ups</span>
+          <a class="small" href="{% url 'followup_list' %}">All follow-ups</a>
+        </div>
+        <div class="card-body p-0">
+          {% for key, label, color, rows in followup_buckets %}
+          <div class="px-3 pt-2 small fw-semibold text-{{ color }}">{{ label }} <span class="badge rounded-pill text-bg-{{ color }}">{{ rows|length }}</span></div>
+          <ul class="list-group list-group-flush mb-1">
+            {% for f in rows %}
+            <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+              <div>
+                <a class="fw-semibold text-decoration-none" href="{% url 'patient_detail' f.patient_id %}">{{ f.patient.full_name }}</a>
+                <div class="small text-muted">{{ f.scheduled_date|date:"D d M" }}{% if f.scheduled_time %} · {{ f.scheduled_time|time:"H:i" }}{% endif %} · {{ f.patient.phone }}</div>
+              </div>
+              {% include "partials/followup_actions.html" with next=request.path %}
+            </li>
+            {% empty %}<li class="list-group-item small text-muted">None</li>{% endfor %}
+          </ul>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="col-xl-6">
       <div class="card widget h-100">
         <div class="card-header"><i class="bi bi-hourglass-split text-warning"></i> Pending lab reports</div>
         <div class="list-group list-group-flush">
           {% for inv in pending_investigations %}
-          <a class="list-group-item list-group-item-action" href="{% url 'visit_record' inv.visit_id %}#sec-investigations">
+          <a class="list-group-item list-group-item-action" href="{% if nav.case_record.view %}{% url 'visit_record' inv.visit_id %}#sec-investigations{% else %}{% url 'lab_visit' inv.visit_id %}{% endif %}">
             <div class="d-flex justify-content-between">
               <strong>{{ inv.visit.patient.full_name }}</strong>
               <span class="small text-muted">requested {{ inv.requested_date|date:"d M" }}</span>
@@ -110,7 +165,7 @@
     </div>
 
     {% if recent_prescriptions is not None %}
-    <div class="col-lg-6">
+    <div class="col-xl-6">
       <div class="card widget h-100">
         <div class="card-header"><i class="bi bi-capsule text-danger"></i> Recent prescriptions</div>
         <div class="list-group list-group-flush">

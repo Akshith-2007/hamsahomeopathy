@@ -11,6 +11,21 @@ from django.core.exceptions import ImproperlyConfigured
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def _load_dotenv(path):
+    """Read KEY=VALUE lines from .env (if present). Real environment variables take precedence."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+_load_dotenv(BASE_DIR / ".env")
+
+
 def env(name, default=None):
     return os.environ.get(name, default)
 
@@ -33,6 +48,16 @@ if not DEBUG and SECRET_KEY == _INSECURE_KEY and not env_bool("DJANGO_ALLOW_INSE
     raise ImproperlyConfigured("Set DJANGO_SECRET_KEY (or DJANGO_DEBUG=true for local development).")
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
+if env_bool("DJANGO_ALLOW_LAN"):
+    # Let other devices on the same Wi-Fi reach this PC by its current IP or name.
+    import socket
+
+    _hostname = socket.gethostname()
+    try:
+        _lan_ips = socket.gethostbyname_ex(_hostname)[2]
+    except OSError:
+        _lan_ips = []
+    ALLOWED_HOSTS += [_hostname, f"{_hostname}.local", *_lan_ips]
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 
 INSTALLED_APPS = [
@@ -93,7 +118,7 @@ if env("DB_ENGINE", "postgres") == "sqlite":
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
+            "NAME": Path(os.environ.get("SQLITE_PATH", BASE_DIR / "db.sqlite3")),
         }
     }
 else:
@@ -202,6 +227,14 @@ SPECTACULAR_SETTINGS = {
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
+    "ENUM_NAME_OVERRIDES": {
+        "VisitStatusEnum": "clinic.models.Visit.Status",
+        "InvestigationStatusEnum": "clinic.models.Investigation.Status",
+        "ScheduledFollowUpStatusEnum": "clinic.models.ScheduledFollowUp.Status",
+        "VisitConsultationModeEnum": "clinic.models.Visit.Mode",
+        "ReportVersionStatusEnum": "clinic.models.InvestigationReport.Version",
+        "RelationshipLinkStatusEnum": "clinic.models.PatientRelationship.LinkStatus",
+    },
 }
 
 # --- Clinic / notifications ---------------------------------------------------
@@ -212,6 +245,8 @@ CLINIC_PHONE = env("CLINIC_PHONE", "")
 # be added in core/notifications.py without touching callers.
 NOTIFICATION_BACKEND = env("NOTIFICATION_BACKEND", "core.notifications.ConsoleBackend")
 SMS_ENABLED = env_bool("SMS_ENABLED", False)
+# Lab dashboard: investigations pending longer than this many days are flagged overdue.
+LAB_OVERDUE_DAYS = int(env("LAB_OVERDUE_DAYS", "1"))
 WHATSAPP_ENABLED = env_bool("WHATSAPP_ENABLED", False)
 
 LOGGING = {

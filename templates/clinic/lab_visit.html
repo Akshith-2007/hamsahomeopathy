@@ -1,0 +1,47 @@
+{% extends "base.html" %}{% load static %}
+{% block title %}Lab – {{ patient.opd_number }}{% endblock %}
+{% block content %}
+<a href="{% url 'lab_dashboard' %}" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Lab dashboard</a>
+<a href="{% url 'lab_patient_reports' patient.pk %}" class="small text-decoration-none ms-3"><i class="bi bi-clock-history"></i> Report history for {{ patient.full_name }}</a>
+<div class="card border-0 shadow-sm my-2">
+  <div class="card-body d-flex flex-wrap gap-4 align-items-center">
+    <div><div class="small text-muted">OPD No.</div><div class="fw-semibold">{{ patient.opd_number }}</div></div>
+    <div><div class="small text-muted">Patient</div><div class="fw-semibold">{{ patient.full_name }}</div></div>
+    <div><div class="small text-muted">Age / Sex</div><div>{{ patient.age }} / {{ patient.get_gender_display }}</div></div>
+    <div><div class="small text-muted">Visit date</div><div>{{ visit.visit_date|date:"d-M-Y" }}</div></div>
+  </div>
+</div>
+
+{% for err in upload_errors %}<div class="alert alert-danger py-2">{{ err }}</div>{% endfor %}
+
+{% for inv in investigations %}
+<div class="sec">
+  <div class="sec-head" style="cursor:default"><i class="bi bi-eyedropper"></i> Investigation requested {{ inv.requested_date|date:"d-M-Y" }}
+    <span class="badge text-bg-{% if inv.status == 'COMPLETED' %}success{% else %}warning{% endif %} ms-2">{{ inv.get_status_display }}</span></div>
+  <div class="sec-body">
+    <div class="row g-3">
+      <div class="col-lg-6">
+        <div class="small text-muted">Tests</div>
+        <div class="mb-2">{{ inv.request_notes|default:"—"|linebreaksbr }}</div>
+        <div class="small text-muted">Requested by {{ inv.created_by|default:"—" }}</div>
+        <div class="small text-muted mt-2">Lab reports</div>
+        {% for r in inv.visible_reports %}{% include "partials/file_chip.html" with f=r kind="report" can_remove=False %}{% empty %}<div class="small text-muted">None uploaded yet.</div>{% endfor %}
+      </div>
+      <div class="col-lg-6">
+        {% if can_upload %}
+        <form method="post" enctype="multipart/form-data">{% csrf_token %}
+          <input type="hidden" name="investigation" value="{{ inv.pk }}">
+          {% include "partials/upload_zone.html" with name="report_files" multiple=True accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" hint="PDF, DOC, DOCX, JPG, PNG (Max size: 20 MB each)" label="Drop lab reports here or click to upload" %}
+          <textarea name="remarks" class="form-control form-control-sm mt-2" rows="2" placeholder="Remarks (optional)"></textarea>
+          <button class="btn btn-success btn-sm mt-2"><i class="bi bi-upload"></i> Upload &amp; mark completed</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% empty %}
+<div class="alert alert-info">No investigations were requested for this visit.</div>
+{% endfor %}
+{% endblock %}
+{% block scripts %}<script src="{% static 'js/case_record.js' %}"></script>{% endblock %}

@@ -1,0 +1,19 @@
+<div class="modal fade" id="rescheduleModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <form method="post" class="modal-content" id="rescheduleForm">{% csrf_token %}
+      <input type="hidden" name="next" value="">
+      <div class="modal-header py-2">
+        <h5 class="modal-title fs-6"><i class="bi bi-calendar-event"></i> Reschedule follow-up</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="small text-muted mb-2" data-patient-label></div>
+        <label class="form-label small mb-0">New date</label>
+        <input type="date" name="scheduled_date" class="form-control form-control-sm mb-2" required>
+        <label class="form-label small mb-0">Time (optional)</label>
+        <input type="time" name="scheduled_time" class="form-control form-control-sm">
+      </div>
+      <div class="modal-footer py-2"><button class="btn btn-sm btn-primary">Save</button></div>
+    </form>
+  </div>
+</div>

@@ -19,6 +19,19 @@
     </div></div>
   </div>
 
+  {% if followup_note and access.followup_assessment.view %}
+  <div class="accordion-item">
+    <h2 class="accordion-header"><button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#s-fn">Follow-up assessment</button></h2>
+    <div id="s-fn" class="accordion-collapse collapse show"><div class="accordion-body small">
+      <dl class="row mb-0">
+        <dt class="col-sm-3">Changes since last visit</dt><dd class="col-sm-9">{{ followup_note.changes_since_last|linebreaksbr|default:"—" }}</dd>
+        <dt class="col-sm-3">Response to remedy</dt><dd class="col-sm-9">{{ followup_note.get_remedy_response_display|default:"—" }}</dd>
+        <dt class="col-sm-3">Doctor's notes</dt><dd class="col-sm-9">{{ followup_note.notes|linebreaksbr|default:"—" }}</dd>
+      </dl>
+    </div></div>
+  </div>
+  {% endif %}
+
   <div class="accordion-item">
     <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#s-pg">Physical Generals &amp; Examination</button></h2>
     <div id="s-pg" class="accordion-collapse collapse"><div class="accordion-body small">

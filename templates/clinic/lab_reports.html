@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Lab reports{% endblock %}
+{% block container %}container-fluid px-lg-4{% endblock %}
+{% block content %}
+<h1 class="h4 mb-3"><i class="bi bi-file-earmark-medical text-primary"></i> Previous reports</h1>
+<form class="row g-2 align-items-end mb-3" method="get">
+  <div class="col-md-3"><label class="form-label small mb-0">Patient</label><input class="form-control form-control-sm" name="q" value="{{ filters.q }}" placeholder="OPD No. or name"></div>
+  <div class="col-md-2"><label class="form-label small mb-0">Test</label>
+    <select class="form-select form-select-sm" name="test"><option value="">All tests</option>
+      {% for key, label, words in test_types %}<option value="{{ key }}" {% if filters.test == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></div>
+  <div class="col-md-2"><label class="form-label small mb-0">Uploaded from</label><input type="date" class="form-control form-control-sm" name="start" value="{{ filters.start }}"></div>
+  <div class="col-md-2"><label class="form-label small mb-0">to</label><input type="date" class="form-control form-control-sm" name="end" value="{{ filters.end }}"></div>
+  <div class="col-md-2"><label class="form-label small mb-0">Uploaded by</label>
+    <select class="form-select form-select-sm" name="uploaded_by"><option value="">Anyone</option><option value="me" {% if filters.uploaded_by == 'me' %}selected{% endif %}>Me</option></select></div>
+  <div class="col-auto"><button class="btn btn-sm btn-primary">Filter</button></div>
+</form>
+<div class="card border-0 shadow-sm"><div class="table-responsive">
+<table class="table table-sm align-middle mb-0">
+  <thead class="table-light"><tr><th>OPD No.</th><th>Patient</th><th>Test</th><th>Requested by</th><th>Requested</th><th>Completed</th><th>Uploaded by</th><th>File</th><th></th></tr></thead>
+  <tbody>
+  {% for r in page %}
+    {% with inv=r.investigation p=r.investigation.visit.patient %}
+    <tr class="{% if r.status == 'SUPERSEDED' %}text-muted{% endif %}">
+      <td class="fw-semibold">{{ p.opd_number }}</td>
+      <td><a class="text-decoration-none" href="{% url 'lab_patient_reports' p.pk %}">{{ p.full_name }}</a></td>
+      <td>{{ inv.request_notes|truncatechars:60 }}</td>
+      <td class="small">{{ inv.created_by|default:"—" }}</td>
+      <td class="small text-nowrap">{{ inv.requested_date|date:"d-M-Y" }}</td>
+      <td class="small text-nowrap">{{ inv.completed_at|date:"d-M-Y H:i"|default:"—" }}</td>
+      <td class="small">{{ r.created_by|default:"—" }}<div class="text-muted">{{ r.created_at|date:"d-M-Y H:i" }}</div></td>
+      <td class="small"><a href="{{ r.file.url }}" target="_blank" rel="noopener"><i class="bi bi-file-earmark"></i> {{ r.filename|truncatechars:22 }}</a>
+        {% if r.version > 1 %}<span class="badge text-bg-info">v{{ r.version }} corrected</span>{% endif %}
+        {% if r.status == 'SUPERSEDED' %}<span class="badge text-bg-secondary">Superseded</span>{% endif %}
+        {% if r.remarks %}<div class="text-muted">{{ r.remarks|truncatechars:60 }}</div>{% endif %}</td>
+      <td class="text-end">{% if can_correct and r.status == 'CURRENT' %}{% include "clinic/_report_correct.html" %}{% endif %}</td>
+    </tr>
+    {% endwith %}
+  {% empty %}<tr><td colspan="9" class="text-center text-muted py-4">No reports found.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% include "partials/pagination.html" %}
+{% endblock %}

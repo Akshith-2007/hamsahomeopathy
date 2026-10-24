@@ -11,10 +11,10 @@ from core.models import AuditLog
 
 from .forms import LoginForm, PasswordResetByAdminForm, UserCreateForm, UserUpdateForm
 from .models import Role
-from .rbac import role_required
+from .rbac import section_required
 
 User = get_user_model()
-admin_only = role_required(Role.ADMIN)
+admin_only = section_required("user_admin", "edit")
 
 
 class LoginView(auth_views.LoginView):
