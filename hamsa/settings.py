@@ -44,7 +44,10 @@ def env_list(name, default=""):
 _INSECURE_KEY = "dev-insecure-change-me"
 SECRET_KEY = env("DJANGO_SECRET_KEY", _INSECURE_KEY)
 DEBUG = env_bool("DJANGO_DEBUG", False)
-if not DEBUG and SECRET_KEY == _INSECURE_KEY and not env_bool("DJANGO_ALLOW_INSECURE_KEY"):
+# Build machines (Vercel sets CI=1) import settings to read the app and collect static files;
+# that needs no secret, so a throwaway key is fine there. Running sites must set a real key.
+_BUILDING = env_bool("CI") and not env("DJANGO_SECRET_KEY")
+if not DEBUG and SECRET_KEY == _INSECURE_KEY and not _BUILDING and not env_bool("DJANGO_ALLOW_INSECURE_KEY"):
     raise ImproperlyConfigured("Set DJANGO_SECRET_KEY (or DJANGO_DEBUG=true for local development).")
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
