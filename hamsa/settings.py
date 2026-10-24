@@ -251,11 +251,17 @@ else:
 STORAGES = {
     "default": _default_storage,
     "staticfiles": {
+        # On Vercel the build's collected files (and manifest) go to the CDN, not into the function,
+        # so a manifest-based storage would fail at runtime ("Missing staticfiles manifest entry").
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
-        if not DEBUG
+        if not (DEBUG or ON_VERCEL)
         else "django.contrib.staticfiles.storage.StaticFilesStorage"
     },
 }
+
+# Vercel serves /static/ from its CDN; WhiteNoise finders are a fallback that serves the files from the
+# app's own static folders if a request ever reaches the function (supported by Vercel's Django builder).
+WHITENOISE_USE_FINDERS = ON_VERCEL
 
 # Uploaded clinical documents live on local disk (a PersistentVolume in k8s) and
 # are only served through an authenticated, role-checked view.
