@@ -377,6 +377,12 @@ class InvestigationReport(UploadMixin, AuditedModel):
     def __str__(self):
         return self.title or self.filename
 
+    def save(self, *args, **kwargs):
+        # Stored names are random; keep the uploaded name so staff see "cbc.pdf", not a hash.
+        if not self.title and self.file and not getattr(self.file, "_committed", True):
+            self.title = Path(self.file.name).name[:200]
+        super().save(*args, **kwargs)
+
     def get_patient(self):
         return self.investigation.visit.patient
 

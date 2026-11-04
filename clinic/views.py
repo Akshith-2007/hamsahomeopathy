@@ -112,6 +112,12 @@ def patient_create(request):
     attachment_errors = (attachsvc.validate_uploads(old_sheets, request.user, m.PatientAttachment.Category.OLD_CASE_SHEET)
                          if old_sheets else [])
     if request.method == "POST" and patient_form.is_valid() and visit_form.is_valid() and not attachment_errors:
+        repeat = _just_registered(request.user, patient_form.cleaned_data)
+        if repeat is not None:
+            # Double-clicked Save or re-sent the form: never create the same patient twice.
+            messages.info(request, f"{repeat.full_name} was already registered a moment ago "
+                                   f"(OPD No. {repeat.opd_number}); showing that record.")
+            return redirect("patient_detail", pk=repeat.pk)
         with transaction.atomic():
             patient = patient_form.save()
             result = services.check_in(
@@ -144,6 +150,14 @@ def patient_create(request):
         "can_attach": can_attach, "attachment_errors": attachment_errors,
         "attachment_access": attachsvc.access(request.user),
     })
+
+
+def _just_registered(user, data, window=timedelta(minutes=2)):
+    """The same patient registered by the same user moments ago (a repeated form submission), or None."""
+    return m.Patient.objects.filter(
+        created_by=user, created_at__gte=timezone.now() - window, full_name__iexact=data["full_name"].strip(),
+        phone=data["phone"], age=data["age"], gender=data["gender"],
+    ).order_by("-id").first()
 
 
 def _link_from_registration(request, patient):
