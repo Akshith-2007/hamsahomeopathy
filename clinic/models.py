@@ -187,7 +187,10 @@ class Visit(AuditedModel):
 
     @property
     def prescription_summary(self):
-        items = PrescriptionItem.objects.filter(prescription__visit=self, prescription__is_deleted=False)
+        if "prescriptions" in getattr(self, "_prefetched_objects_cache", {}):
+            items = [item for rx in self.prescriptions.all() for item in rx.items.all()]
+        else:
+            items = PrescriptionItem.objects.filter(prescription__visit=self, prescription__is_deleted=False)
         return ", ".join(f"{i.medicine_name} {i.potency}".strip() for i in items)
 
 

@@ -208,7 +208,9 @@ def patient_detail(request, pk):
     if not can_view(request.user, "patient"):
         return redirect(f"{reverse('lab_dashboard')}?q={patient.opd_number}")
     access = section_access(request.user)
-    visits = patient.visits.select_related("doctor", "reported_by")
+    # Diagnosis and prescription columns read these prefetched rows (no query per visit).
+    visits = patient.visits.select_related("doctor", "reported_by", "diagnosis").prefetch_related(
+        Prefetch("prescriptions", queryset=m.Prescription.objects.prefetch_related("items")))
     images = patient.images.select_related("created_by") if access["patient_images"]["view"] else []
     AuditLog.record(AuditLog.Action.VIEW, patient)
     return render(request, "clinic/patient_detail.html", {
@@ -384,7 +386,8 @@ def visit_record(request, pk):
 
     access = record.access
     patient = visit.patient
-    history = PatientHistory(patient, visit) if access["history"]["view"] else None
+    attachment_ctx = _attachments_context(request, patient)
+    history = PatientHistory(patient, visit, attachments=attachment_ctx["attachments"]) if access["history"]["view"] else None
     if history is not None:
         previous_visits = [v for v in history.visits if v.pk != visit.pk]  # already prefetched
     elif access["visit_history"]["view"]:
@@ -438,7 +441,7 @@ def visit_record(request, pk):
         "medicine_suggestions": m.PrescriptionItem.objects.values_list("medicine_name", flat=True).distinct()[:300]
         if access["prescription"]["edit"] else [],
         **_followup_card_context(request, patient, source_visit=visit),
-        **_attachments_context(request, patient),
+        **attachment_ctx,
     })
 
 
@@ -507,7 +510,8 @@ def patient_history(request, pk):
     """Full-page patient timeline (same content as the case-record History tab)."""
     patient = get_object_or_404(m.Patient, pk=pk)
     start, end = _optional_date(request, "start"), _optional_date(request, "end")
-    history = PatientHistory(patient, start=start, end=end)
+    history = PatientHistory(patient, start=start, end=end,
+                             attachments=_attachments_context(request, patient)["attachments"])
     AuditLog.record(AuditLog.Action.VIEW, patient, changes={"view": "history"})
     back_patient = None
     if request.GET.get("from", "").isdigit():

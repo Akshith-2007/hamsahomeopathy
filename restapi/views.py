@@ -284,7 +284,8 @@ class PatientViewSet(SectionViewSet):
         patient = self.get_object()
         dates = s.HistoryRangeSerializer(data=request.query_params)
         dates.is_valid(raise_exception=True)
-        history = PatientHistory(patient, start=dates.validated_data.get("start"), end=dates.validated_data.get("end"))
+        history = PatientHistory(patient, start=dates.validated_data.get("start"), end=dates.validated_data.get("end"),
+                                 attachments=attachsvc.visible_attachments(request.user, patient.attachments.all()))
         AuditLog.record(AuditLog.Action.VIEW, patient, changes={"view": "history", "channel": "api"})
         return Response(history.as_dict(report_filter=lambda r: can_view_report(request.user, r)))
 
