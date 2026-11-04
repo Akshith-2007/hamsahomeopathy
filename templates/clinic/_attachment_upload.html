@@ -1,0 +1,28 @@
+{# Upload form for patient attachments. Needs `patient` and `attachment_access`. #}
+<div class="card-body border-top">
+  <form method="post" enctype="multipart/form-data" action="{% url 'attachment_upload' patient.pk %}">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}#attachments">
+    <div class="row g-3">
+      <div class="col-md-6">
+        {% include "partials/upload_zone.html" with name="attachment_files" multiple=True accept=attachment_access.accept icon="paperclip" label="Attach old case sheet or document" hint=attachment_access.hint %}
+      </div>
+      <div class="col-md-6">
+        <div class="mb-2">
+          <label class="form-label small mb-0" for="att-category">Category</label>
+          <select name="category" id="att-category" class="form-select form-select-sm">
+            {% for value, label in attachment_access.categories %}<option value="{{ value }}" {% if value == attachment_access.default_category %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-0" for="att-date">Document date <span class="text-muted">(date written on the sheet, if known)</span></label>
+          <input type="date" name="document_date" id="att-date" class="form-control form-control-sm">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-0" for="att-notes">Notes</label>
+          <input type="text" name="description" id="att-notes" class="form-control form-control-sm" maxlength="500" placeholder="e.g. Case sheet 2019–2021 from previous clinic">
+        </div>
+        <div class="text-end"><button class="btn btn-sm btn-primary"><i class="bi bi-upload"></i> Upload</button></div>
+      </div>
+    </div>
+  </form>
+</div>

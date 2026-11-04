@@ -9,6 +9,7 @@ from django.views.decorators.http import require_POST
 
 from core.models import AuditLog
 
+from . import throttle
 from .forms import LoginForm, PasswordResetByAdminForm, UserCreateForm, UserUpdateForm
 from .models import Role
 from .rbac import section_required
@@ -18,9 +19,27 @@ admin_only = section_required("user_admin", "edit")
 
 
 class LoginView(auth_views.LoginView):
+    """Sign-in with a per-IP limit on failed attempts (accounts are also locked after MAX_FAILED_LOGINS)."""
+
     form_class = LoginForm
     template_name = "registration/login.html"
     redirect_authenticated_user = True
+
+    def post(self, request, *args, **kwargs):
+        if throttle.is_blocked(request):
+            form = self.get_form()
+            form.add_error(None, f"Too many sign-in attempts from this device. Please wait "
+                                 f"{throttle.window_minutes()} minutes and try again.")
+            return self.render_to_response(self.get_context_data(form=form), status=429)
+        return super().post(request, *args, **kwargs)
+
+    def form_invalid(self, form):
+        throttle.record_failure(self.request)
+        return super().form_invalid(form)
+
+    def form_valid(self, form):
+        throttle.reset(self.request)
+        return super().form_valid(form)
 
 
 @admin_only

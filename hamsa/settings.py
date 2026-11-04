@@ -203,12 +203,20 @@ SECURE_COOKIES = env_bool("DJANGO_SECURE_COOKIES", not DEBUG)
 SESSION_COOKIE_SECURE = SECURE_COOKIES
 CSRF_COOKIE_SECURE = SECURE_COOKIES
 SECURE_CONTENT_TYPE_NOSNIFF = True
-X_FRAME_OPTIONS = "SAMEORIGIN"  # PDF previews are embedded in iframes
+SECURE_REFERRER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"  # no page of the app is ever shown inside a frame
 if env_bool("DJANGO_BEHIND_TLS_PROXY", ON_VERCEL):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # Enable once the site is HTTPS-only.
 SECURE_SSL_REDIRECT = env_bool("DJANGO_SSL_REDIRECT", ON_VERCEL)
+# HSTS: once HTTPS works, set DJANGO_HSTS_SECONDS=31536000 (one year).
 SECURE_HSTS_SECONDS = int(env("DJANGO_HSTS_SECONDS", "0"))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("DJANGO_HSTS_INCLUDE_SUBDOMAINS", True)
+SECURE_HSTS_PRELOAD = env_bool("DJANGO_HSTS_PRELOAD", True)
+
+# Sign-in throttling per client IP (in addition to locking an account after MAX_FAILED_LOGINS).
+LOGIN_RATE_LIMIT = int(env("LOGIN_RATE_LIMIT", "20"))              # failed attempts allowed per window
+LOGIN_RATE_WINDOW_MINUTES = int(env("LOGIN_RATE_WINDOW_MINUTES", "15"))
 
 # --- I18N ---------------------------------------------------------------------
 LANGUAGE_CODE = "en-in"
@@ -271,6 +279,12 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 MAX_DOCUMENT_UPLOAD_MB = 20
 MAX_IMAGE_UPLOAD_MB = 5
+# Patient attachments (old case sheets migrated from paper, outside reports, scans).
+ATTACHMENT_MAX_UPLOAD_MB = float(env("ATTACHMENT_MAX_UPLOAD_MB", "10"))
+ATTACHMENT_MAX_FILES = int(env("ATTACHMENT_MAX_FILES", "10"))
+# Behind nginx: hand protected files to nginx with X-Accel-Redirect instead of streaming them through
+# Python. Set to the nginx `internal` location that maps to MEDIA_ROOT, e.g. /protected-media/.
+MEDIA_ACCEL_REDIRECT_PREFIX = env("MEDIA_ACCEL_REDIRECT_PREFIX", "")
 # Hard cap per request imposed by the host (Vercel rejects bodies over 4.5 MB). 0 = no cap.
 MAX_REQUEST_MB = float(env("MAX_REQUEST_MB", "4.4" if ON_VERCEL else "0"))
 # Shared secret Vercel Cron sends as "Authorization: Bearer <CRON_SECRET>".
@@ -291,6 +305,7 @@ REST_FRAMEWORK = {
         "rest_framework.filters.OrderingFilter",
     ],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_THROTTLE_RATES": {"login": env("API_LOGIN_RATE", "10/min")},
 }
 
 SPECTACULAR_SETTINGS = {
@@ -326,6 +341,12 @@ LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {"plain": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}},
-    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "plain"}},
+    # stdout: collected by Docker / Kubernetes / the hosting provider.
+    "handlers": {"console": {"class": "logging.StreamHandler", "stream": "ext://sys.stdout", "formatter": "plain"}},
     "root": {"handlers": ["console"], "level": env("LOG_LEVEL", "INFO")},
+    "loggers": {
+        "django": {"handlers": ["console"], "level": env("DJANGO_LOG_LEVEL", "INFO"), "propagate": False},
+        # Bad Host headers from scanners are noise, not errors.
+        "django.security.DisallowedHost": {"handlers": ["console"], "level": "ERROR", "propagate": False},
+    },
 }

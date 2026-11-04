@@ -35,7 +35,7 @@ Open http://127.0.0.1:5000 and sign in with one of the demo accounts. All of the
 
 To use PostgreSQL locally, leave `DB_ENGINE` unset and set the `POSTGRES_*` variables from `.env.example`.
 
-Run the tests with `DB_ENGINE=sqlite python manage.py test`.
+Run the tests with `DB_ENGINE=sqlite python manage.py test` (PowerShell: `$env:DB_ENGINE="sqlite"; python manage.py test`). The suite also runs unchanged against PostgreSQL: leave `DB_ENGINE` unset and point the `POSTGRES_*` variables at a server where the user may create a test database.
 
 ### Use it from other devices on the same Wi-Fi
 
@@ -67,12 +67,12 @@ Steps:
 
 1. In [vercel.com](https://vercel.com), choose **Add New → Project → Import** the `hamsahomeopathy` GitHub repo. Framework: *Django* (detected).
 2. Add the Neon database and the environment variables above, then **Deploy**.
-3. **Create the tables:** on this PC, run `powershell -ExecutionPolicy Bypass -File scriptsercel_migrate.ps1`. Paste the Neon `DATABASE_URL` when asked and choose the online `admin` password. Add `-SeedDemo` to load demo data. Run it again whenever an update adds migrations.
+3. **Create the tables:** on this PC, run `powershell -ExecutionPolicy Bypass -File scripts\vercel_migrate.ps1`. Paste the Neon `DATABASE_URL` when asked and choose the online `admin` password. Add `-SeedDemo` to load demo data. Run it again whenever an update adds migrations.
 4. Open `https://<project>.vercel.app` and sign in as `admin`.
 
 Limits of the Vercel version:
 
-* **4.5 MB per upload/save:** Vercel rejects larger requests, and the app warns before sending. Compress big PDFs or scans, or upload them one at a time.
+* **4.5 MB per upload/save:** Vercel rejects larger requests, and the app warns before sending. Compress big PDFs or scans, or upload them one at a time. This also applies to old case sheets: the 10 MB attachment limit only applies on Render, Docker and Kubernetes.
 * **File storage:** uploaded files live in the private R2 bucket. The app checks the user's role, then redirects to a signed link that is valid for 5 minutes.
 * **Daily cron:** missed follow-ups and reminders run once a day at 08:00 IST through Vercel Cron (`/cron/daily/`, protected by `CRON_SECRET`).
 * **Notifications:** the bell polls every 12 seconds, so each open browser tab makes regular function calls.
@@ -99,11 +99,19 @@ Notes:
 ## Docker Compose
 
 ```bash
-cp .env.example .env               # set DJANGO_SECRET_KEY; SEED_DEMO_DATA=true on first run if you want demo data
+cp .env.example .env               # set DJANGO_SECRET_KEY, POSTGRES_PASSWORD and DJANGO_ADMIN_PASSWORD
 docker compose up --build
 ```
 
-The app runs at http://localhost:5000. Migrations run automatically on start. Uploaded files are kept in the `media` volume and the database in `pgdata`.
+The app runs at http://localhost:5000 and signs in as `admin` with `DJANGO_ADMIN_PASSWORD` (created on first start; the password must pass the normal password rules, otherwise the log says why no admin was created). Migrations run automatically on start. Uploaded files, including old case sheets, are kept in the `media` volume and the database in `pgdata`, so both survive restarts and rebuilds. The container reports its health to Docker (`docker ps` shows *healthy*).
+
+**With nginx in front** (protected downloads are streamed by nginx with `X-Accel-Redirect`, uploads up to 60 MB per request):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.nginx.yml up -d --build   # http://localhost:8080
+```
+
+[docker/nginx.conf](docker/nginx.conf) is the configuration; add your TLS certificate there, or put the clinic's HTTPS proxy in front of it.
 
 ---
 
@@ -118,8 +126,9 @@ The manifests in [k8s/](k8s/) work on Docker Desktop Kubernetes, minikube, kind 
 | `02-secret.yaml` | Django secret key and DB credentials (**development values – replace**) |
 | `10-postgres.yaml` | PostgreSQL 16 **StatefulSet** + headless Service + 5 Gi volume claim |
 | `20-media-pvc.yaml` | 10 Gi PersistentVolumeClaim for uploaded documents/images |
-| `30-web-deployment.yaml` | Django/Gunicorn Deployment; init container runs migrations; liveness `/healthz`, readiness `/readyz` |
+| `30-web-deployment.yaml` | Django/Gunicorn Deployment (non-root, no privilege escalation); init container runs migrations; startup and liveness `/healthz`, readiness `/readyz` |
 | `31-web-service.yaml` | NodePort Service on **30080** |
+| `32-web-ingress.yaml` | HTTPS Ingress (ingress-nginx) with a 60 MB upload limit; replace `hamsa.example.com` and create the `hamsa-tls` secret |
 | `40-followup-reminders-cronjob.yaml` | Daily job: mark missed follow-ups, then send reminders (SMS/WhatsApp, disabled by default) |
 
 ### 1. Build the image where the cluster can see it
@@ -165,15 +174,77 @@ If you use another hostname or port, add it to `DJANGO_ALLOWED_HOSTS` and
 
 **Production notes**
 
-* Terminate TLS in front of the app, then set:
+* Point the clinic's domain at the Ingress controller, put that hostname in `32-web-ingress.yaml` and in `DJANGO_ALLOWED_HOSTS` / `DJANGO_CSRF_TRUSTED_ORIGINS` (`https://…`), and create the TLS secret (or use cert-manager).
+* Behind HTTPS, set these in the ConfigMap (the commented values):
   * `DJANGO_SECURE_COOKIES=true`
   * `DJANGO_BEHIND_TLS_PROXY=true`
   * `DJANGO_SSL_REDIRECT=true`
   * `DJANGO_HSTS_SECONDS=31536000`
-* The media volume is `ReadWriteOnce`, so the web Deployment runs one replica. To run more replicas, switch the PVC to a `ReadWriteMany` storage class.
-* Back up both the Postgres volume and the media volume. For the database, use `pg_dump` from the `hamsa-postgres-0` pod.
+* Create `hamsa-secrets` out-of-band (step 2) instead of using the development values in `02-secret.yaml`.
+* The media volume is `ReadWriteOnce`, so the web Deployment runs one replica. To run more replicas, switch the PVC to a `ReadWriteMany` storage class, or store uploads in S3-compatible storage (`S3_BUCKET_NAME` …).
+* Back up the database and the media volume as described under [Backups](#backups-patient-records-must-never-be-lost).
 
 ---
+
+## Production deployment
+
+The same image and settings run on Docker Compose, Kubernetes and Render. Everything deployment-specific comes from environment variables; [.env.example](.env.example) lists them all with safe defaults and comments.
+
+**Checklist**
+
+1. `DJANGO_DEBUG=false` (the default) and a long random `DJANGO_SECRET_KEY`. The app refuses to start without one.
+2. `DJANGO_ALLOWED_HOSTS` and `DJANGO_CSRF_TRUSTED_ORIGINS` list the real hostname (`https://…` for the origin).
+3. Database credentials in `DATABASE_URL` or `POSTGRES_*`, never in the image.
+4. HTTPS terminated in front of the app, then `DJANGO_SECURE_COOKIES=true`, `DJANGO_BEHIND_TLS_PROXY=true`, `DJANGO_SSL_REDIRECT=true`, and finally `DJANGO_HSTS_SECONDS=31536000` (HSTS also sends `includeSubDomains` and `preload`; turn those off with `DJANGO_HSTS_INCLUDE_SUBDOMAINS=false` / `DJANGO_HSTS_PRELOAD=false` if other subdomains still use plain HTTP).
+5. First administrator: set `DJANGO_ADMIN_USERNAME` / `DJANGO_ADMIN_PASSWORD`. `python manage.py ensure_admin` runs on every container start, creates the account only if it is missing, never changes an existing password and refuses weak passwords.
+6. Run `python manage.py check --deploy` with the production variables: it reports no issues.
+7. Keep `SEED_DEMO_DATA=false` on the live clinic; demo users have a published password.
+
+**What is already set up**
+
+| Area | How |
+|---|---|
+| App server | Gunicorn, configured in [docker/gunicorn.conf.py](docker/gunicorn.conf.py): `WEB_CONCURRENCY` workers (default 2×CPU+1, max 4) × 2 threads, 120 s timeout for slow uploads, workers recycled every ~1000 requests |
+| Static files | WhiteNoise serves compressed, cache-busted files collected at image build time |
+| Uploads | Local disk on a persistent volume (`MEDIA_ROOT`), or a private S3-compatible bucket via `S3_*`. Never public: every file goes through a login + role check. With nginx, `MEDIA_ACCEL_REDIRECT_PREFIX=/protected-media/` lets nginx stream the file after Django approves |
+| Upload size | 10 MB per attachment (`ATTACHMENT_MAX_UPLOAD_MB`), 20 MB per report; nginx and the Ingress accept 60 MB per request |
+| Container | `python:3.12-slim`, runs as user `app` (uid 1000), Docker `HEALTHCHECK` on `/healthz` |
+| Health | `/health` and `/healthz` (process up), `/readyz` (database reachable; returns 503 without revealing error details) |
+| Sign-in protection | Account locked after `MAX_FAILED_LOGINS` (5) wrong passwords until an admin unlocks it; at most `LOGIN_RATE_LIMIT` (20) failed sign-ins per device per 15 minutes; API login limited to `API_LOGIN_RATE` (10/min) |
+| Security headers | HTTPS redirect, HSTS, secure + HttpOnly cookies, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: same-origin`; Django's password validators (min. 8 characters, not common, not numeric, not like the username) |
+| Errors | Friendly 403, 404 and 500 pages in the app's layout; with debug off, no stack trace or technical detail ever reaches the browser |
+| Logs | Everything goes to stdout (`LOG_LEVEL`, `DJANGO_LOG_LEVEL`), so `docker logs` / `kubectl logs` / the host's log viewer show it |
+| Migrations | Run automatically (`RUN_MIGRATIONS=true` in Compose/Render, the init container in Kubernetes) and apply cleanly to an empty PostgreSQL database |
+
+## Backups (patient records must never be lost)
+
+Patient records live in **two** places, and both must be backed up together:
+
+1. **The PostgreSQL database**: patients, visits, prescriptions, audit trail.
+2. **The uploads** (`MEDIA_ROOT` volume or the S3 bucket): photos, reports and the old case sheets.
+
+A database backup without the uploads (or the other way round) cannot restore a complete record.
+
+```bash
+# Docker Compose: nightly, e.g. from cron on the host
+docker compose exec -T db pg_dump -U hamsa -Fc hamsa > backups/hamsa-$(date +%F).dump
+docker run --rm -v hamsahomeo_media:/media -v "$PWD/backups":/backup alpine \
+  tar czf /backup/media-$(date +%F).tar.gz -C /media .
+
+# Kubernetes
+kubectl -n hamsa exec hamsa-postgres-0 -- pg_dump -U hamsa -Fc hamsa > hamsa-$(date +%F).dump
+kubectl -n hamsa exec deploy/hamsa-web -- tar czf - -C /app/media . > media-$(date +%F).tar.gz
+
+# Restore (into an empty database)
+pg_restore -U hamsa -d hamsa --clean --if-exists hamsa-2026-11-04.dump
+tar xzf media-2026-11-04.tar.gz -C /path/to/media
+```
+
+* Keep at least 30 daily copies, store one copy **off the clinic premises** (cloud storage, an encrypted external disk taken home), and encrypt it: these files contain medical records.
+* For S3 storage, turn on bucket versioning and copy the bucket elsewhere (e.g. `rclone sync`).
+* Managed databases (Render, Neon): turn on the provider's automatic daily backups as well.
+* **Test a restore** every few months on a spare machine; an untested backup is not a backup.
+* Deleting in the app is always a soft delete, so mistakes can be undone from Django admin (`/django-admin/`) without a restore.
 
 ## Roles and access
 
@@ -197,6 +268,7 @@ Every rule lives in one table, [accounts/rbac.py](accounts/rbac.py) (`SECTION_RU
 | Investigation reports | all | all | all, upload | **upload; sees lab-produced reports only** |
 | Past treatment | edit | edit | edit | hidden |
 | Before/after images | edit | edit | view | hidden |
+| **Attachments** (old case sheets, outside reports, prescriptions, scans) | upload, view, download, delete | upload, view, download, delete | upload, view, download | **lab reports only:** upload, view, download |
 | Repertory analysis | edit | edit | hidden | hidden |
 | **Prescription (full section)** | edit | edit | hidden | hidden |
 | Follow-up progress notes | edit | edit | hidden | hidden |
@@ -231,11 +303,11 @@ Every rule lives in one table, [accounts/rbac.py](accounts/rbac.py) (`SECTION_RU
 |---|---|---|
 | Home: launcher tiles; today's patients (waiting first, with New/Follow-up, consultation status and pharmacy status); upcoming follow-ups (overdue, today, next 7 days); pharmacy widget; pending lab reports; recent prescriptions | `/` | Admin, Doctor, Reception |
 | **Check-in**: choose New case or Follow-up | `/checkin/` | Admin, Doctor, Reception |
-| Register a new patient (*Save patient only* or *Save & fill case sheet*, plus linking family members) | `/patients/new/` | Admin, Doctor, Reception |
+| Register a new patient (*Save patient only* or *Save & fill case sheet*, plus linking family members and **attaching old case sheets**) | `/patients/new/` | Admin, Doctor, Reception |
 | Find patient; new case for an existing patient; follow-up check-in | `/patients/`, `?mode=newcase`, `?mode=followup` | Admin, Doctor, Reception |
-| Patient page: check-in menu, next follow-up card, **family members** | `/patients/<id>/` | Admin, Doctor, Reception |
-| **Case record**: summary bar, previous visits and timeline tabs, follow-up comparison, family-history panel, previous prescriptions with *Repeat*, prescription with *Send to pharmacy* and order status, follow-up scheduling | `/visits/<id>/` | Admin, Doctor (Reception sees its own sections) |
-| Full-page patient history (timeline, date filter) | `/patients/<id>/history/` | Admin, Doctor |
+| Patient page: check-in menu, next follow-up card, **family members**, **Attachments** (list, upload, view, download, delete) | `/patients/<id>/` | Admin, Doctor, Reception |
+| **Case sheet**: summary bar, previous visits, timeline and **Attachments** tabs, follow-up comparison, family-history panel, previous prescriptions with *Repeat*, prescription with *Send to pharmacy* and order status, follow-up scheduling | `/visits/<id>/` | Admin, Doctor (Reception sees its own sections) |
+| Full-page patient history (timeline including imported old records, date filter) | `/patients/<id>/history/` | Admin, Doctor |
 | Follow-ups list | `/followups/` | Admin, Doctor, Reception |
 | **Pharmacy queue** (New → Preparing → Ready → Dispensed today; designed for tablets) | `/pharmacy/` | Admin, Reception |
 | Dispensing slip (A4) / labels (62×40 mm) | `/pharmacy/orders/<id>/label/` (`?size=label`) | Admin, Reception |
@@ -260,6 +332,25 @@ Every rule lives in one table, [accounts/rbac.py](accounts/rbac.py) (`SECTION_RU
    * marks the scheduled follow-up `COMPLETED`.
 
 Opening a `WAITING` visit as a doctor moves it to `IN_CONSULTATION`. *Save & complete consultation* or *Send to pharmacy* sets it to `COMPLETED`.
+
+Pressing *Save* twice (or re-sending the registration form) never creates the same patient twice: the same name, mobile, age and sex registered by the same person within two minutes opens the existing record instead.
+
+### Attaching old case sheets (moving from paper or the old software)
+
+**Reception, at registration:** under *Patient photo* there is **Attach old case sheet (optional)**. Click it (or drag the files onto it) and choose one or more scans or photos of the patient's old sheets. They are saved as *Old Case Sheet* when the patient is saved. If a file is refused, the patient is not saved yet: fix the file and choose it again.
+
+**Anyone at the clinic, later:** open the patient (*Find patient*), scroll to **Attachments** and use the upload box:
+
+1. Choose the files (several at once is fine).
+2. Pick the **Category**: Old Case Sheet, Lab Report, Prescription, Scan / X-ray or Other.
+3. Optionally enter the **Document date** (the date written on the old sheet) and **Notes** (e.g. "Case sheet 2019–2021 from previous clinic").
+4. Click **Upload**.
+
+* **Accepted files:** PDF, JPG, PNG and Word (DOC/DOCX), up to 10 MB each (`ATTACHMENT_MAX_UPLOAD_MB`), up to 10 files at a time. The app checks the actual file content, so a renamed or damaged file is refused with a message saying which file and why.
+* **Viewing:** the eye button opens the file in a new tab (PDFs and images display in the browser), the arrow downloads it. Files are never reachable by a public link; every view and download is checked against the user's role and written to the audit log.
+* **Where doctors see them:** on the patient page, in the **Attachments** tab next to *Previous visits* on the case sheet, and in the patient **timeline**, where each one appears at its document date marked **Imported / Old record**. Without a document date it is placed on the day it was uploaded.
+* **Deleting:** doctors and admins can remove a file (after a confirmation). Nothing is really deleted: the file and its record are kept and can be restored by an admin in Django admin.
+* **Lab staff** see and upload *Lab Report* attachments only, on the lab's per-patient report page.
 
 ### Follow-up scheduling
 
@@ -382,8 +473,13 @@ Notifications are delivered through [core/inbox.py](core/inbox.py). To move to W
   * `GET /api/investigation-reports/?status=&test=&date_from=&date_to=&uploaded_by=me&patient=`.
   * `POST /api/investigation-reports/<id>/correct/`.
 * **Patients:**
-  * `patients` (identity-only for the lab)
-  * `GET /api/patients/<id>/history/` (Doctor/Admin)
+  * `patients` (identity-only for the lab); each patient includes `attachment_count`
+  * `GET /api/patients/<id>/history/` (Doctor/Admin): visits newest first with prescriptions (dose, duration, instructions), follow-up advice and booked follow-ups, plus `imported_records` (old case sheets)
+* **Attachments:**
+  * `GET /api/attachments/?patient=&category=&visit=` (lab: lab reports only)
+  * `POST /api/attachments/` (multipart: `patient`, `category`, optional `visit`, `description`, `document_date`, one or more `files`)
+  * `PATCH /api/attachments/<id>/` (category, notes, document date), `DELETE /api/attachments/<id>/` (soft delete; Doctor/Admin)
+  * `GET /api/attachments/<id>/file/` views the file, `?download=1` downloads it
   * `GET|POST /api/patients/<id>/relationships/` and `DELETE /api/patients/<id>/relationships/<link_id>/`
   * `GET /api/patients/<id>/family-history/` (Doctor/Admin)
 * **Visits:**
@@ -441,6 +537,7 @@ patients ─┬─< visits ──┬── case_histories / physical_generals / 
           │            ├──< followups (progress notes)
           │            └── previous_visit ──> visits (follow-up chain)
           ├──< scheduled_followups (one SCHEDULED per patient)
+          ├──< patient_attachments (old case sheets, outside documents; optional visit)
           ├──< patient_images
           └──< patient_relationships >── patients (stored both ways)
 opd_counters  (per-year OPD sequence)
@@ -455,6 +552,8 @@ opd_counters  (per-year OPD sequence)
 | `clinic/0004_relationships_and_pharmacy` | Relationships; prescription item form, quantity and dose; dispense orders and items |
 | `clinic/0005_family_inference_prefill_lab` | Links get `source`, `inferred_via`, `status` (existing links become `MANUAL`/`ACTIVE`). Visits get `consultation_mode` (existing visits become `IN_PERSON`) and `reported_by`. History sections get `prefill_sources`. Dispense orders get `collect_by`. Investigations get `completed_at`. Reports get `remarks`, `version`, `status`, `supersedes` |
 | `clinic/0006_backfill_investigation_completed_at` | Sets `completed_at` for investigations that were already completed |
+| `clinic/0007_patient_attachments` | Patient attachments (old case sheets and other documents) |
+| `clinic/0008_patient_search_trigram_indexes` | PostgreSQL trigram indexes for fast name / mobile / OPD No. search (no-op on SQLite, skipped with a warning if `pg_trgm` is not allowed) |
 | `core/0004` | New audit actions and notification kinds |
 | `core/0002` | Audit action choices |
 | `core/0003` | Audit action choices; notifications |
@@ -481,8 +580,9 @@ core/       audited base model + soft delete, audit log, notifications (inbox.py
 accounts/   custom User (role, lock state, signature), RBAC table, auth backend, user admin
 clinic/     clinical models, case-record form bundle, views, reports, tests
             services.py (check-in, follow-ups, repeat), history.py (doctor's history),
-            relationships.py + family.py (family links/history), pharmacy.py (dispense orders)
-api/        DRF serializers, viewsets, permissions, Swagger
+            relationships.py + family.py (family links/history), pharmacy.py (dispense orders),
+            attachments.py (old case sheets: validation, storage, protected serving)
+restapi/    DRF serializers, viewsets, permissions, Swagger
 templates/  Bootstrap 5 screens      static/  css, js, logo
-k8s/        Kubernetes manifests     docker/  entrypoint
+k8s/        Kubernetes manifests     docker/  entrypoint, gunicorn.conf.py, nginx.conf
 ```

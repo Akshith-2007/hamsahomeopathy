@@ -21,6 +21,7 @@ from core import inbox
 from core.models import AuditLog, Notification
 from core.validators import document_validators, run_validators
 
+from . import attachments as attachsvc
 from . import models as m
 from . import pharmacy, relationships, services
 from . import lab as labsvc
@@ -105,7 +106,18 @@ def patient_create(request):
     """Register a new patient; always creates today's New-case visit (WAITING)."""
     patient_form = PatientForm(request.POST or None, request.FILES or None, prefix="patient")
     visit_form = RegistrationVisitForm(request.POST or None, prefix="visit")
-    if request.method == "POST" and patient_form.is_valid() and visit_form.is_valid():
+    can_attach = can_edit(request.user, "attachments")
+    # Optional old case sheets from the paper / previous system, attached while registering.
+    old_sheets = request.FILES.getlist("attachment_files") if can_attach and request.method == "POST" else []
+    attachment_errors = (attachsvc.validate_uploads(old_sheets, request.user, m.PatientAttachment.Category.OLD_CASE_SHEET)
+                         if old_sheets else [])
+    if request.method == "POST" and patient_form.is_valid() and visit_form.is_valid() and not attachment_errors:
+        repeat = _just_registered(request.user, patient_form.cleaned_data)
+        if repeat is not None:
+            # Double-clicked Save or re-sent the form: never create the same patient twice.
+            messages.info(request, f"{repeat.full_name} was already registered a moment ago "
+                                   f"(OPD No. {repeat.opd_number}); showing that record.")
+            return redirect("patient_detail", pk=repeat.pk)
         with transaction.atomic():
             patient = patient_form.save()
             result = services.check_in(
@@ -114,6 +126,10 @@ def patient_create(request):
             )
             if request.POST.get("has_family") == "yes" and can_edit(request.user, "relationships"):
                 _link_from_registration(request, patient)
+            if old_sheets:
+                attachsvc.attach(patient, old_sheets, category=m.PatientAttachment.Category.OLD_CASE_SHEET)
+                messages.success(request, f"{len(old_sheets)} old case sheet{'s' if len(old_sheets) != 1 else ''} "
+                                          "attached to the patient's record.")
         auto = [link for link in relationships.relatives_of(patient) if link.source == "INFERRED"]
         if auto:
             messages.info(request, "Also connected automatically: " + ", ".join(
@@ -125,10 +141,23 @@ def patient_create(request):
             return redirect("patient_detail", pk=patient.pk)
         messages.success(request, f"Patient registered with OPD No. {patient.opd_number}.")
         return redirect("visit_record", pk=result.visit.pk)
+    if attachment_errors:
+        messages.error(request, "The patient was not saved yet. Please choose the old case sheets again after "
+                                "fixing the problems shown below.")
     return render(request, "clinic/patient_form.html", {
         "form": patient_form, "visit_form": visit_form,
         "relationship_choices": relationships.CHOICES, "can_link": can_edit(request.user, "relationships"),
+        "can_attach": can_attach, "attachment_errors": attachment_errors,
+        "attachment_access": attachsvc.access(request.user),
     })
+
+
+def _just_registered(user, data, window=timedelta(minutes=2)):
+    """The same patient registered by the same user moments ago (a repeated form submission), or None."""
+    return m.Patient.objects.filter(
+        created_by=user, created_at__gte=timezone.now() - window, full_name__iexact=data["full_name"].strip(),
+        phone=data["phone"], age=data["age"], gender=data["gender"],
+    ).order_by("-id").first()
 
 
 def _link_from_registration(request, patient):
@@ -193,11 +222,14 @@ def patient_detail(request, pk):
     if not can_view(request.user, "patient"):
         return redirect(f"{reverse('lab_dashboard')}?q={patient.opd_number}")
     access = section_access(request.user)
-    visits = patient.visits.select_related("doctor", "reported_by")
+    # Diagnosis and prescription columns read these prefetched rows (no query per visit).
+    visits = patient.visits.select_related("doctor", "reported_by", "diagnosis").prefetch_related(
+        Prefetch("prescriptions", queryset=m.Prescription.objects.prefetch_related("items")))
     images = patient.images.select_related("created_by") if access["patient_images"]["view"] else []
     AuditLog.record(AuditLog.Action.VIEW, patient)
     return render(request, "clinic/patient_detail.html", {
         "patient": patient, "visits": visits, "images": images, "access": access,
+        **_attachments_context(request, patient),
         "can_delete_patient": can_delete(request.user, "patient"),
         "checkin_choices": [
             ("FOLLOW_UP", "Follow-up", "Continues the last visit; carries forward case details."),
@@ -206,6 +238,17 @@ def patient_detail(request, pk):
         **_followup_card_context(request, patient),
         **_relatives_context(request, patient),
     })
+
+
+def _attachments_context(request, patient):
+    """Attachments list (limited to the categories the user may see) and what the user may do with it."""
+    if not can_view(request.user, "attachments"):
+        return {"attachments": None}
+    return {
+        "attachments": list(attachsvc.visible_attachments(
+            request.user, patient.attachments.select_related("created_by", "visit"))),
+        "attachment_access": attachsvc.access(request.user),
+    }
 
 
 def _relatives_context(request, patient):
@@ -342,7 +385,7 @@ def visit_record(request, pk):
     if request.method == "POST":
         if record.is_valid():
             record.save()
-            messages.success(request, "Case record saved." + (
+            messages.success(request, "Case sheet saved." + (
                 " Consultation marked complete." if visit.status == m.Visit.Status.COMPLETED else ""))
             for note in record.notes:
                 messages.success(request, note)
@@ -357,7 +400,8 @@ def visit_record(request, pk):
 
     access = record.access
     patient = visit.patient
-    history = PatientHistory(patient, visit) if access["history"]["view"] else None
+    attachment_ctx = _attachments_context(request, patient)
+    history = PatientHistory(patient, visit, attachments=attachment_ctx["attachments"]) if access["history"]["view"] else None
     if history is not None:
         previous_visits = [v for v in history.visits if v.pk != visit.pk]  # already prefetched
     elif access["visit_history"]["view"]:
@@ -411,6 +455,7 @@ def visit_record(request, pk):
         "medicine_suggestions": m.PrescriptionItem.objects.values_list("medicine_name", flat=True).distinct()[:300]
         if access["prescription"]["edit"] else [],
         **_followup_card_context(request, patient, source_visit=visit),
+        **attachment_ctx,
     })
 
 
@@ -467,7 +512,7 @@ def prescription_repeat(request, pk, rx_pk):
         messages.warning(request, str(exc))
     else:
         messages.success(request, f"Prescription of {source.visit.visit_date:%d-%b-%Y} copied. "
-                                  "Review and save the case record.")
+                                  "Review and save the case sheet.")
         order = pharmacy.sync_after_edit(target, request.user)
         if order is not None:
             messages.info(request, f"Updated prescription sent to the pharmacy (version {order.version}).")
@@ -479,7 +524,8 @@ def patient_history(request, pk):
     """Full-page patient timeline (same content as the case-record History tab)."""
     patient = get_object_or_404(m.Patient, pk=pk)
     start, end = _optional_date(request, "start"), _optional_date(request, "end")
-    history = PatientHistory(patient, start=start, end=end)
+    history = PatientHistory(patient, start=start, end=end,
+                             attachments=_attachments_context(request, patient)["attachments"])
     AuditLog.record(AuditLog.Action.VIEW, patient, changes={"view": "history"})
     back_patient = None
     if request.GET.get("from", "").isdigit():
@@ -511,6 +557,62 @@ def upload_delete(request, kind, pk):
     obj.delete()
     messages.success(request, "File removed.")
     return redirect(_next_url(request, reverse("home")))
+
+
+def _attachments_home(user, patient):
+    if can_view(user, "patient"):
+        return f"{reverse('patient_detail', args=[patient.pk])}#attachments"
+    return f"{reverse('lab_patient_reports', args=[patient.pk])}#attachments"
+
+
+@section_required("attachments", "edit")
+@require_POST
+def attachment_upload(request, patient_pk):
+    """Attach one or more documents (old case sheets, reports, scans) to the patient's record."""
+    patient = get_object_or_404(m.Patient, pk=patient_pk)
+    back = _next_url(request, _attachments_home(request.user, patient))
+    files = request.FILES.getlist("attachment_files")
+    category = request.POST.get("category") or attachsvc.default_category(request.user)
+    document_date = None
+    errors = []
+    if request.POST.get("document_date"):
+        try:
+            document_date = timezone.datetime.strptime(request.POST["document_date"], "%Y-%m-%d").date()
+        except ValueError:
+            errors.append("Please enter the document date as a valid date.")
+    visit = None
+    if request.POST.get("visit", "").isdigit():
+        visit = m.Visit.objects.filter(pk=request.POST["visit"], patient=patient).first()
+    errors += attachsvc.validate_uploads(files, request.user, category, document_date)
+    if errors:
+        for error in errors:
+            messages.error(request, error)
+        return redirect(back)
+    created = attachsvc.attach(patient, files, category=category, description=request.POST.get("description", "").strip(),
+                               document_date=document_date, visit=visit)
+    messages.success(request, f"{len(created)} file{'s' if len(created) != 1 else ''} attached to "
+                              f"{patient.full_name}'s record.")
+    return redirect(back)
+
+
+@login_required
+def attachment_file(request, pk):
+    """View (inline) or download (?download=1) an attachment. Login, role and category are checked;
+    an attachment the user may not see answers 404, so guessed IDs reveal nothing."""
+    attachment = get_object_or_404(attachsvc.visible_attachments(request.user).select_related("patient"), pk=pk)
+    return attachsvc.file_response(attachment, download=request.GET.get("download") == "1")
+
+
+@login_required
+@require_POST
+def attachment_delete(request, pk):
+    if not can_delete(request.user, "attachments"):
+        raise PermissionDenied
+    attachment = get_object_or_404(m.PatientAttachment.objects.select_related("patient"), pk=pk)
+    attachment.delete()  # soft delete: the file and row are kept for the audit trail
+    messages.success(request, f"“{attachment.original_filename}” was removed from the record. "
+                              "A copy is kept in the audit trail.")
+    return redirect(_next_url(request, _attachments_home(request.user, attachment.patient)))
 
 
 @section_required("repertory", "edit")
@@ -724,6 +826,7 @@ def lab_patient_reports(request, pk):
     return render(request, "clinic/lab_patient_reports.html", {
         "patient": patient, "investigations": investigations,
         "can_correct": can_edit(request.user, "lab_reports"),
+        **_attachments_context(request, patient),
     })
 
 

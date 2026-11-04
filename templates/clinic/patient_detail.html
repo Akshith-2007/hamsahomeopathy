@@ -148,6 +148,14 @@
       </div>
     </div>
 
+    {% if attachments is not None %}
+    <div class="card border-0 shadow-sm mb-3" id="attachments">
+      <div class="card-header bg-white fw-semibold"><i class="bi bi-paperclip text-primary"></i> Attachments <span class="badge rounded-pill text-bg-light border ms-1">{{ attachments|length }}</span></div>
+      {% include "clinic/_attachments.html" %}
+      {% if attachment_access.upload %}{% include "clinic/_attachment_upload.html" %}{% endif %}
+    </div>
+    {% endif %}
+
     {% if access.patient_images.view %}
     <div class="card border-0 shadow-sm">
       <div class="card-header bg-white fw-semibold"><i class="bi bi-images text-danger"></i> Before / after treatment images</div>
@@ -173,4 +181,4 @@
   </div>
 </div>
 {% endblock %}
-{% block scripts %}{% load static %}<script src="{% static 'js/relatives.js' %}"></script>{% endblock %}
+{% block scripts %}{% load static %}<script src="{% static 'js/case_record.js' %}"></script><script src="{% static 'js/relatives.js' %}"></script>{% endblock %}

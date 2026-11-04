@@ -19,9 +19,14 @@ RUN sed -i 's/\r$//' docker/entrypoint.sh && chmod +x docker/entrypoint.sh \
  && useradd --uid 1000 --create-home app \
  && mkdir -p /app/media && chown -R app:app /app/media
 
-# No USER here: the entrypoint fixes ownership of the uploads disk as root, then drops to "app".
+# The app always runs as the unprivileged "app" user (uid 1000). The entrypoint starts as root only to
+# hand a freshly mounted uploads disk to that user, then drops privileges before anything else runs.
+# Kubernetes starts the container as uid 1000 directly (see k8s/30-web-deployment.yaml).
 EXPOSE 5000
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/healthz' % os.environ.get('PORT', '5000'), timeout=4)" || exit 1
+
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
-# Listens on $PORT when the host sets it (Render), otherwise 5000.
-CMD ["sh", "-c", "exec gunicorn hamsa.wsgi:application --bind 0.0.0.0:${PORT:-5000} --workers ${WEB_CONCURRENCY:-3} --timeout 120 --access-logfile -"]
+# Port, workers and timeouts: docker/gunicorn.conf.py (reads $PORT, $WEB_CONCURRENCY, $GUNICORN_TIMEOUT).
+CMD ["gunicorn", "--config", "docker/gunicorn.conf.py", "hamsa.wsgi:application"]

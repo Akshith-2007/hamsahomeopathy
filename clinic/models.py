@@ -8,7 +8,7 @@ from django.db import IntegrityError, models, transaction
 from django.utils import timezone
 
 from core.models import AuditedModel
-from core.validators import document_validators, image_validators, sheet_validators
+from core.validators import attachment_validators, document_validators, image_validators, sheet_validators
 
 phone_validator = RegexValidator(r"^\+?[0-9 \-]{7,20}$", "Enter a valid phone number.")
 bp_validator = RegexValidator(r"^\d{2,3}\s*/\s*\d{2,3}$", "Use the format 120/80.")
@@ -33,6 +33,11 @@ upload_investigations = _upload_to("investigations")
 upload_past_treatment = _upload_to("past_treatment")
 upload_images = _upload_to("images")
 upload_repertory = _upload_to("repertory")
+
+
+def upload_case_sheet(instance, filename):
+    """case_sheets/<patient id>/<random>.<ext>: never the original name, so files can't be guessed."""
+    return f"case_sheets/{instance.patient_id}/{uuid.uuid4().hex}{Path(filename).suffix.lower()}"
 
 
 class UploadMixin:
@@ -182,7 +187,10 @@ class Visit(AuditedModel):
 
     @property
     def prescription_summary(self):
-        items = PrescriptionItem.objects.filter(prescription__visit=self, prescription__is_deleted=False)
+        if "prescriptions" in getattr(self, "_prefetched_objects_cache", {}):
+            items = [item for rx in self.prescriptions.all() for item in rx.items.all()]
+        else:
+            items = PrescriptionItem.objects.filter(prescription__visit=self, prescription__is_deleted=False)
         return ", ".join(f"{i.medicine_name} {i.potency}".strip() for i in items)
 
 
@@ -369,6 +377,12 @@ class InvestigationReport(UploadMixin, AuditedModel):
     def __str__(self):
         return self.title or self.filename
 
+    def save(self, *args, **kwargs):
+        # Stored names are random; keep the uploaded name so staff see "cbc.pdf", not a hash.
+        if not self.title and self.file and not getattr(self.file, "_committed", True):
+            self.title = Path(self.file.name).name[:200]
+        super().save(*args, **kwargs)
+
     def get_patient(self):
         return self.investigation.visit.patient
 
@@ -435,6 +449,61 @@ class PatientImage(UploadMixin, AuditedModel):
     @property
     def uploaded_by(self):
         return self.created_by
+
+
+# --------------------------------------------------------------------------- #
+# Patient attachments (old case sheets from the paper / previous system)
+# --------------------------------------------------------------------------- #
+class PatientAttachment(UploadMixin, AuditedModel):
+    """A document attached to the patient's record. Uploader and upload time are created_by / created_at;
+    deleting only sets is_deleted (AuditedModel), so medical records are never lost."""
+
+    class Category(models.TextChoices):
+        OLD_CASE_SHEET = "OLD_CASE_SHEET", "Old Case Sheet"
+        LAB_REPORT = "LAB_REPORT", "Lab Report"
+        PRESCRIPTION = "PRESCRIPTION", "Prescription"
+        SCAN = "SCAN", "Scan / X-ray"
+        OTHER = "OTHER", "Other"
+
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="attachments")
+    visit = models.ForeignKey(Visit, null=True, blank=True, on_delete=models.SET_NULL, related_name="attachments",
+                              help_text="Optional: the visit this document belongs to.")
+    file = models.FileField(upload_to=upload_case_sheet, max_length=255, validators=attachment_validators())
+    original_filename = models.CharField(max_length=255)
+    file_size = models.PositiveIntegerField(help_text="Bytes")
+    content_type = models.CharField(max_length=100, help_text="Detected from the file content, not the file name.")
+    category = models.CharField(max_length=20, choices=Category.choices, default=Category.OLD_CASE_SHEET,
+                                db_index=True)
+    description = models.TextField("Notes", blank=True)
+    document_date = models.DateField(null=True, blank=True, help_text="Date written on the old sheet, if known.")
+
+    class Meta:
+        db_table = "patient_attachments"
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["patient", "is_deleted"], name="attachment_patient_alive")]
+
+    def __str__(self):
+        return f"{self.get_category_display()} – {self.original_filename}"
+
+    def get_patient(self):
+        return self.patient
+
+    @property
+    def filename(self):
+        return self.original_filename
+
+    @property
+    def uploaded_by(self):
+        return self.created_by
+
+    @property
+    def uploaded_at(self):
+        return self.created_at
+
+    @property
+    def record_date(self):
+        """Date used to place the document in the patient's history."""
+        return self.document_date or timezone.localtime(self.created_at).date()
 
 
 # --------------------------------------------------------------------------- #

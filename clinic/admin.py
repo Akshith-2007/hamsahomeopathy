@@ -23,6 +23,18 @@ class VisitAdmin(admin.ModelAdmin):
         return m.Visit.all_objects.select_related("patient", "doctor")
 
 
+@admin.register(m.PatientAttachment)
+class PatientAttachmentAdmin(admin.ModelAdmin):
+    list_display = ("original_filename", "patient", "category", "document_date", "created_by", "created_at", "is_deleted")
+    list_filter = ("category", "is_deleted")
+    search_fields = ("original_filename", "patient__full_name", "patient__opd_number")
+    raw_id_fields = ("patient", "visit")
+    readonly_fields = ("original_filename", "file_size", "content_type")
+
+    def get_queryset(self, request):
+        return m.PatientAttachment.all_objects.select_related("patient", "created_by")
+
+
 for model in (m.CaseHistory, m.PhysicalGeneral, m.MentalGeneral, m.Examination, m.Diagnosis, m.Investigation,
               m.InvestigationReport, m.PastTreatment, m.PastTreatmentAttachment, m.PatientImage,
               m.RepertoryAnalysis, m.RepertoryEntry, m.Prescription, m.PrescriptionItem, m.FollowUp):

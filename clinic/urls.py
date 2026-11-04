@@ -40,6 +40,9 @@ urlpatterns = [
     path("lab/patients/<int:pk>/reports/", views.lab_patient_reports, name="lab_patient_reports"),
     path("lab/visits/<int:pk>/", views.lab_visit, name="lab_visit"),
     path("uploads/<slug:kind>/<int:pk>/delete/", views.upload_delete, name="upload_delete"),
+    path("patients/<int:patient_pk>/attachments/upload/", views.attachment_upload, name="attachment_upload"),
+    path("attachments/<int:pk>/", views.attachment_file, name="attachment_file"),
+    path("attachments/<int:pk>/delete/", views.attachment_delete, name="attachment_delete"),
     path("repertory/<int:pk>/sheet/delete/", views.repertory_sheet_delete, name="repertory_sheet_delete"),
     path("reports/", views.reports, name="reports"),
 ]

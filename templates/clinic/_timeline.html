@@ -1,4 +1,4 @@
-{# Patient timeline: needs `history`; `current_visit` (optional) is highlighted. #}
+{# Patient timeline: needs `history`; `current_visit` (optional) is highlighted. Imported old records are listed by date. #}
 <div class="d-flex flex-wrap align-items-end gap-2 mb-2" data-timeline-filter>
   <div><label class="form-label small mb-0">From</label><input type="date" class="form-control form-control-sm" data-filter-start value="{{ start|date:'Y-m-d' }}"></div>
   <div><label class="form-label small mb-0">To</label><input type="date" class="form-control form-control-sm" data-filter-end value="{{ end|date:'Y-m-d' }}"></div>
@@ -9,7 +9,18 @@
   </div>
 </div>
 <div class="timeline">
-{% for v in history.timeline %}
+{% for entry in history.entries %}
+{% if entry.is_imported %}{% with a=entry.attachment %}
+  <div class="timeline-item" data-date="{{ entry.date|date:'Y-m-d' }}">
+    <a class="timeline-head text-decoration-none text-body" href="{% url 'attachment_file' a.pk %}" target="_blank" rel="noopener">
+      <span class="fw-semibold">{{ entry.date|date:"d-M-Y" }}</span>
+      <span class="badge text-bg-warning-subtle text-warning-emphasis border"><i class="bi bi-archive"></i> Imported / Old record</span>
+      <span class="badge text-bg-light border">{{ a.get_category_display }}</span>
+      <span class="text-muted small text-truncate">{{ a.original_filename }}{% if a.description %} · {{ a.description }}{% endif %}{% if not a.document_date %} · date not known, filed {{ a.created_at|date:"d-M-Y" }}{% endif %}</span>
+      <i class="bi bi-box-arrow-up-right ms-auto"></i>
+    </a>
+  </div>
+{% endwith %}{% else %}{% with v=entry.visit %}
   <div class="timeline-item{% if v.pk == current_visit.pk %} is-current{% endif %}" data-date="{{ v.visit_date|date:'Y-m-d' }}">
     <button type="button" class="timeline-head{% if not forloop.first %} collapsed{% endif %}" data-bs-toggle="collapse" data-bs-target="#tl-{{ v.pk }}" aria-expanded="{% if forloop.first %}true{% else %}false{% endif %}">
       <span class="fw-semibold">{{ v.visit_date|date:"d-M-Y" }}</span>
@@ -34,7 +45,11 @@
             {% endif %}
             {% with notes=v.followups.all %}{% if notes %}
             <div class="tl-label mt-2">Follow-up notes</div>
-            <ul class="mb-0 ps-3">{% for fu in notes %}<li>{{ fu.visit_date|date:"d-M" }}: {{ fu.progress_notes|default:"—" }}{% if fu.medicines_given %} <span class="text-muted">({{ fu.medicines_given }})</span>{% endif %}</li>{% endfor %}</ul>
+            <ul class="mb-0 ps-3">{% for fu in notes %}<li>{{ fu.visit_date|date:"d-M" }}: {{ fu.progress_notes|default:"—" }}{% if fu.medicines_given %} <span class="text-muted">({{ fu.medicines_given }})</span>{% endif %}{% if fu.next_followup_date %} <span class="text-muted">· next {{ fu.next_followup_date|date:"d-M-Y" }}</span>{% endif %}</li>{% endfor %}</ul>
+            {% endif %}{% endwith %}
+            {% with booked=v.scheduled_followups.all %}{% if booked %}
+            <div class="tl-label mt-2">Next follow-up</div>
+            {% for f in booked %}<div>{{ f.scheduled_date|date:"d-M-Y" }}{% if f.scheduled_time %} {{ f.scheduled_time|time:"H:i" }}{% endif %} <span class="badge text-bg-light border">{{ f.get_status_display }}</span></div>{% endfor %}
             {% endif %}{% endwith %}
           </div>
           <div class="col-lg-6">
@@ -42,6 +57,7 @@
             {% for rx in v.prescriptions.all %}
               {% for i in rx.items.all %}<div><span class="fw-semibold">{{ i.medicine_name }}</span> {{ i.potency }}{% if i.dose %} · {{ i.dose }}{% endif %}{% if i.duration %} · {{ i.duration }}{% endif %}{% if i.instructions %} · {{ i.instructions }}{% endif %}</div>{% empty %}<div class="text-muted">—</div>{% endfor %}
               {% if rx.dietary_advice %}<div class="small text-muted">Diet: {{ rx.dietary_advice }}</div>{% endif %}
+              {% if rx.followup_advice %}<div class="small text-muted">Follow-up advice: {{ rx.followup_advice }}</div>{% endif %}
             {% empty %}<div class="text-muted">—</div>{% endfor %}
             <div class="tl-label mt-2">Investigations</div>
             {% for inv in v.investigations.all %}
@@ -60,7 +76,8 @@
       </div>
     </div>
   </div>
+{% endwith %}{% endif %}
 {% empty %}
-  <div class="text-muted small">No visits in this period.</div>
+  <div class="text-muted small">{% if start or end %}No visits in this period.{% else %}No visits or old records yet. The history will appear here after the first consultation.{% endif %}</div>
 {% endfor %}
 </div>

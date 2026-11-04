@@ -1,5 +1,7 @@
+import zipfile
 from pathlib import Path
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.utils.deconstruct import deconstructible
@@ -57,6 +59,64 @@ class FileSignatureValidator:
 
     def __eq__(self, other):
         return isinstance(other, FileSignatureValidator)
+
+
+ATTACHMENT_EXTENSIONS = ["pdf", "jpg", "jpeg", "png", "doc", "docx"]
+CONTENT_TYPES = {
+    "pdf": "application/pdf",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "doc": "application/msword",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
+def sniff_content_type(uploaded):
+    """MIME type worked out from the file's bytes (never from its name or the browser), or None."""
+    position = uploaded.tell()
+    try:
+        uploaded.seek(0)
+        head = uploaded.read(8)
+        if head.startswith(b"%PDF"):
+            return CONTENT_TYPES["pdf"]
+        if head.startswith(b"\x89PNG"):
+            return CONTENT_TYPES["png"]
+        if head.startswith(b"\xff\xd8\xff"):
+            return CONTENT_TYPES["jpg"]
+        if head.startswith(b"\xd0\xcf\x11\xe0"):
+            return CONTENT_TYPES["doc"]
+        if head.startswith(b"PK\x03\x04"):
+            # Any ZIP starts like this; a Word document must contain word/document.xml.
+            uploaded.seek(0)
+            try:
+                with zipfile.ZipFile(uploaded) as archive:
+                    if "word/document.xml" in archive.namelist():
+                        return CONTENT_TYPES["docx"]
+            except zipfile.BadZipFile:
+                return None
+        return None
+    finally:
+        uploaded.seek(position)
+
+
+@deconstructible
+class SettingMaxFileSizeValidator:
+    """Like MaxFileSizeValidator, but reads the limit from a setting so it can change without a migration."""
+
+    def __init__(self, setting_name):
+        self.setting_name = setting_name
+
+    def __call__(self, file):
+        MaxFileSizeValidator(getattr(settings, self.setting_name))(file)
+
+    def __eq__(self, other):
+        return isinstance(other, SettingMaxFileSizeValidator) and other.setting_name == self.setting_name
+
+
+def attachment_validators():
+    return [FileExtensionValidator(ATTACHMENT_EXTENSIONS), SettingMaxFileSizeValidator("ATTACHMENT_MAX_UPLOAD_MB"),
+            FileSignatureValidator()]
 
 
 def document_validators(max_mb=20):

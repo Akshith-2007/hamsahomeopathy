@@ -4,10 +4,27 @@ Used by the case-record summary bar, the "Previous prescriptions" panel, the
 timeline (HTML and /api/patients/<id>/history/). Visibility is decided by the
 caller through accounts.rbac ("history" section).
 """
+from dataclasses import dataclass
+from datetime import date
+
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Prefetch
+from django.urls import reverse
 
 from . import models as m
+
+
+@dataclass
+class TimelineEntry:
+    """One row of the patient timeline: a visit, or an imported old record (attachment)."""
+
+    date: date
+    visit: "m.Visit | None" = None
+    attachment: "m.PatientAttachment | None" = None
+
+    @property
+    def is_imported(self):
+        return self.attachment is not None
 
 
 def history_visits(patient):
@@ -21,6 +38,7 @@ def history_visits(patient):
                 Prefetch("reports", queryset=m.InvestigationReport.objects.select_related("created_by")))),
             Prefetch("followups", queryset=m.FollowUp.objects.order_by("visit_date", "id")),
             Prefetch("images", queryset=m.PatientImage.objects.select_related("created_by")),
+            Prefetch("scheduled_followups", queryset=m.ScheduledFollowUp.objects.order_by("scheduled_date", "id")),
         )
         .order_by("-visit_date", "-id")
     )
@@ -57,7 +75,8 @@ def remedy_text(visit):
 
 
 class PatientHistory:
-    def __init__(self, patient, current_visit=None, *, start=None, end=None):
+    def __init__(self, patient, current_visit=None, *, start=None, end=None, attachments=None):
+        """`attachments`: the patient's attachments this user may see (shown as imported old records)."""
         self.patient = patient
         self.current = current_visit
         self.visits = list(history_visits(patient))  # newest first
@@ -67,10 +86,16 @@ class PatientHistory:
             self.previous = [v for v in self.visits if key(v) < current_key]
         else:
             self.previous = list(self.visits)
-        self.timeline = [
-            v for v in self.visits
-            if (start is None or v.visit_date >= start) and (end is None or v.visit_date <= end)
-        ]
+        def in_range(day):
+            return (start is None or day >= start) and (end is None or day <= end)
+
+        self.timeline = [v for v in self.visits if in_range(v.visit_date)]
+        self.attachments = list(attachments) if attachments is not None else []
+        entries = [TimelineEntry(v.visit_date, visit=v) for v in self.timeline]
+        entries += [TimelineEntry(a.record_date, attachment=a) for a in self.attachments if in_range(a.record_date)]
+        # Newest first; on the same day the visit comes before the paper records filed with it.
+        self.entries = sorted(entries, reverse=True, key=lambda e: (
+            e.date, e.visit is not None, (e.visit or e.attachment).pk))
         self.next_followup = patient.scheduled_followups.filter(status=m.ScheduledFollowUp.Status.SCHEDULED).first()
 
     # ------------------------------------------------------------- summary bar
@@ -147,9 +172,12 @@ class PatientHistory:
                     "prescribed_by": person(v.doctor or rx.created_by),
                     "dietary_advice": rx.dietary_advice,
                     "followup_advice": rx.followup_advice,
-                    "items": [{"medicine_name": i.medicine_name, "potency": i.potency, "duration": i.duration,
-                               "dose": i.instructions} for i in rx.items.all()],
+                    "items": [{"medicine_name": i.medicine_name, "potency": i.potency, "form": i.form,
+                               "quantity": i.quantity, "dose": i.dose, "duration": i.duration,
+                               "instructions": i.instructions} for i in rx.items.all()],
                 } for rx in v.prescriptions.all()],
+                "next_followups": [{"id": f.pk, "date": f.scheduled_date, "time": f.scheduled_time,
+                                    "status": f.status} for f in v.scheduled_followups.all()],
                 "investigations": [{
                     "id": inv.pk, "request_notes": inv.request_notes, "requested_date": inv.requested_date,
                     "status": inv.status, "requested_by": person(inv.created_by),
@@ -178,4 +206,10 @@ class PatientHistory:
                 } if self.next_followup else None,
             },
             "visits": [visit_dict(v) for v in self.timeline],
+            "imported_records": [{
+                "id": e.attachment.pk, "date": e.date, "document_date": e.attachment.document_date,
+                "category": e.attachment.category, "category_display": e.attachment.get_category_display(),
+                "original_filename": e.attachment.original_filename, "description": e.attachment.description,
+                "view_url": reverse("patient-attachment-file", args=[e.attachment.pk]),
+            } for e in self.entries if e.is_imported],
         }

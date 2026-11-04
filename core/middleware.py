@@ -66,8 +66,12 @@ class HealthCheckMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if request.path in ("/healthz", "/readyz"):
+        if request.path in ("/health", "/healthz"):
             from . import views
 
-            return views.healthz(request) if request.path == "/healthz" else views.readyz(request)
+            return views.healthz(request)
+        if request.path == "/readyz":
+            from . import views
+
+            return views.readyz(request)
         return self.get_response(request)

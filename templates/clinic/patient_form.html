@@ -51,6 +51,11 @@
           {{ form.photo }}
         </label>
         {{ form.photo.errors }}
+        {% if can_attach %}
+        <label class="form-label fw-semibold mt-3"><i class="bi bi-paperclip"></i> Attach old case sheet <span class="text-muted fw-normal small">(optional)</span></label>
+        {% include "partials/upload_zone.html" with name="attachment_files" multiple=True accept=attachment_access.accept icon="paperclip" label="Click to upload old case sheets" hint=attachment_access.hint errors=attachment_errors %}
+        <div class="form-text">For patients moving from the paper or previous system. Saved under “Old Case Sheet”.</div>
+        {% endif %}
       </div>
     </div>
   </div>

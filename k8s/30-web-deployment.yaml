@@ -17,6 +17,7 @@ spec:
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
+        runAsNonRoot: true
         fsGroup: 1000
       initContainers:
         - name: migrate
@@ -26,6 +27,9 @@ spec:
           envFrom:
             - configMapRef: { name: hamsa-config }
             - secretRef: { name: hamsa-secrets }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
       containers:
         - name: web
           image: hamsa-homeo:latest
@@ -36,21 +40,28 @@ spec:
           envFrom:
             - configMapRef: { name: hamsa-config }
             - secretRef: { name: hamsa-secrets }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
           volumeMounts:
             - name: media
               mountPath: /app/media
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+            failureThreshold: 24   # up to 2 minutes for the first start
           readinessProbe:
             httpGet: { path: /readyz, port: http }
-            initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             httpGet: { path: /healthz, port: http }
-            initialDelaySeconds: 15
             periodSeconds: 20
+            timeoutSeconds: 5
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits: { cpu: "1", memory: 768Mi }
       volumes:
         - name: media
           persistentVolumeClaim:
-            claimName: hamsa-media
+            claimName: hamsa-media   # uploaded case sheets, reports and images survive pod restarts

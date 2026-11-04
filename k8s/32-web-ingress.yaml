@@ -1,0 +1,31 @@
+# HTTPS entry point (ingress-nginx). Replace hamsa.example.com with the clinic's domain, add it to
+# DJANGO_ALLOWED_HOSTS / DJANGO_CSRF_TRUSTED_ORIGINS in 01-configmap.yaml, and create the TLS secret, e.g.
+#   kubectl -n hamsa create secret tls hamsa-tls --cert=fullchain.pem --key=privkey.pem
+# (or let cert-manager issue it by adding a cluster-issuer annotation).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hamsa-web
+  namespace: hamsa
+  annotations:
+    # Several scanned case sheets (10 MB each) may be uploaded at once.
+    nginx.ingress.kubernetes.io/proxy-body-size: "60m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["hamsa.example.com"]
+      secretName: hamsa-tls
+  rules:
+    - host: hamsa.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hamsa-web
+                port:
+                  name: http
