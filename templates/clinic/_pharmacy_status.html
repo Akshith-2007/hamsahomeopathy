@@ -8,7 +8,7 @@
       {% else %}<span class="small text-muted">not sent yet</span>{% endif %}{% endwith %}
     </div>
     {% if access.pharmacy_send.edit %}
-    <button class="btn btn-sm btn-success" name="send_to_pharmacy" value="complete" title="Saves the case record, sends the medicines to reception and completes the consultation">
+    <button class="btn btn-sm btn-success" name="send_to_pharmacy" value="complete" title="Saves the case sheet, sends the medicines to reception and completes the consultation">
       <i class="bi bi-send"></i> {% if dispense_orders %}Save &amp; re-send to pharmacy{% else %}Send to pharmacy{% endif %}</button>
     <button class="btn btn-sm btn-outline-success" name="send_to_pharmacy" value="keep_open" title="Send now but keep the consultation open">
       Send but keep consultation open</button>

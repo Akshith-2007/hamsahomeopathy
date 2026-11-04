@@ -385,7 +385,7 @@ def visit_record(request, pk):
     if request.method == "POST":
         if record.is_valid():
             record.save()
-            messages.success(request, "Case record saved." + (
+            messages.success(request, "Case sheet saved." + (
                 " Consultation marked complete." if visit.status == m.Visit.Status.COMPLETED else ""))
             for note in record.notes:
                 messages.success(request, note)
@@ -512,7 +512,7 @@ def prescription_repeat(request, pk, rx_pk):
         messages.warning(request, str(exc))
     else:
         messages.success(request, f"Prescription of {source.visit.visit_date:%d-%b-%Y} copied. "
-                                  "Review and save the case record.")
+                                  "Review and save the case sheet.")
         order = pharmacy.sync_after_edit(target, request.user)
         if order is not None:
             messages.info(request, f"Updated prescription sent to the pharmacy (version {order.version}).")

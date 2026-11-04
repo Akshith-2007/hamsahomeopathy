@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Something went wrong{% endblock %}
+{% block content %}
+<div class="text-center py-5">
+  <i class="bi bi-exclamation-octagon display-3 text-danger"></i>
+  <h1 class="h4 mt-3">Something went wrong on our side</h1>
+  <p class="text-muted">The problem has been recorded. Please go back and try again; if it keeps happening, contact the administrator.</p>
+  <a class="btn btn-primary" href="{% url 'home' %}">Back to dashboard</a>
+</div>
+{% endblock %}

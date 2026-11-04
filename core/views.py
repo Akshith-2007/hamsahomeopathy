@@ -9,7 +9,10 @@ import io
 
 from django.core.files.storage import default_storage
 from django.core.management import call_command
-from django.http import Http404, HttpResponseForbidden, JsonResponse
+import logging
+
+from django.http import Http404, HttpResponseForbidden, HttpResponseServerError, JsonResponse
+from django.template import loader
 from django.shortcuts import redirect, render
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt
@@ -20,6 +23,8 @@ from clinic.models import InvestigationReport
 from clinic.views import dashboard_context
 
 from .models import AuditLog
+
+logger = logging.getLogger(__name__)
 
 # patients/<OPD>/<kind>/<file> -> section the viewer must be allowed to see
 MEDIA_SECTIONS = {
@@ -109,8 +114,9 @@ def readyz(request):
     try:
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
-    except Exception as exc:  # noqa: BLE001 - report any DB failure to the probe
-        return JsonResponse({"status": "unavailable", "error": str(exc)}, status=503)
+    except Exception:  # noqa: BLE001 - any DB failure means "not ready"; details go to the log only
+        logger.exception("Readiness check failed: database unavailable")
+        return JsonResponse({"status": "unavailable"}, status=503)
     return JsonResponse({"status": "ok"})
 
 
@@ -120,6 +126,16 @@ def permission_denied(request, exception=None):
 
 def not_found(request, exception=None):
     return render(request, "404.html", status=404)
+
+
+def server_error(request):
+    """Friendly 500 page. Rendered without request context: the error may come from the database or session."""
+    try:
+        body = loader.get_template("500.html").render({"CLINIC_NAME": settings.CLINIC_NAME})
+    except Exception:  # noqa: BLE001 - never fail while reporting a failure
+        body = ("<!doctype html><title>Something went wrong</title><h1>Something went wrong on our side</h1>"
+                "<p>Please go back and try again. If it keeps happening, contact the administrator.</p>")
+    return HttpResponseServerError(body)
 
 
 @csrf_exempt
