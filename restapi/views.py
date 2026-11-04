@@ -8,6 +8,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from django.db.models import Count, Q
@@ -36,6 +37,8 @@ UPLOAD_PARSERS = [MultiPartParser, FormParser, JSONParser]
 class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
 
     @extend_schema(request=s.LoginSerializer, responses={200: dict}, tags=["auth"])
     def post(self, request):

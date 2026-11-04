@@ -8,4 +8,5 @@ resources:
   - 20-media-pvc.yaml
   - 30-web-deployment.yaml
   - 31-web-service.yaml
+  - 32-web-ingress.yaml
   - 40-followup-reminders-cronjob.yaml

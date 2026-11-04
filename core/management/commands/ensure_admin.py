@@ -6,6 +6,8 @@ user already exists, so it is safe to run on every start and never resets a chan
 import os
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand
 
 
@@ -21,6 +23,12 @@ class Command(BaseCommand):
         User = get_user_model()
         if User.objects.filter(username=username).exists():
             self.stdout.write(f"Admin '{username}' already exists.")
+            return
+        try:
+            validate_password(password, User(username=username, role="ADMIN"))
+        except ValidationError as exc:
+            # Don't stop the app from starting; explain in the log why no admin was created.
+            self.stderr.write(f"DJANGO_ADMIN_PASSWORD is too weak, admin not created: {' '.join(exc.messages)}")
             return
         User.objects.create_superuser(username, os.environ.get("DJANGO_ADMIN_EMAIL", ""), password,
                                       role="ADMIN", first_name="Clinic", last_name="Admin")
