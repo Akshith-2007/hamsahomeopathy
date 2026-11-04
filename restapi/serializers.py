@@ -3,7 +3,9 @@ from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
 from rest_framework import serializers
 
-from accounts.rbac import can_edit, can_view, visible_report_sources
+from django.urls import reverse
+
+from accounts.rbac import attachment_categories, can_edit, can_view, visible_report_sources
 from clinic import models as m
 from core.models import AuditLog, Notification
 
@@ -45,17 +47,70 @@ PATIENT_IDENTITY_FIELDS = ("id", "opd_number", "full_name", "age", "gender", "ge
 
 class PatientSerializer(serializers.ModelSerializer):
     gender_display = serializers.CharField(source="get_gender_display", read_only=True)
+    attachment_count = serializers.SerializerMethodField()
 
     class Meta:
         model = m.Patient
         exclude = AUDIT_HIDDEN
         read_only_fields = ("opd_number",)
 
+    def get_attachment_count(self, obj) -> int:
+        """Attachments the requesting user may see (annotated by PatientViewSet; counted here otherwise)."""
+        annotated = getattr(obj, "attachment_count", None)
+        if annotated is not None:
+            return annotated
+        from clinic.attachments import visible_attachments
+
+        return visible_attachments(_request_user(self), obj.attachments.all()).count()
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         if not can_view(_request_user(self), "patient"):
             # Lab staff get identity only: no contact details, address or photo.
             data = {key: data[key] for key in PATIENT_IDENTITY_FIELDS if key in data}
+        return data
+
+
+class PatientAttachmentSerializer(serializers.ModelSerializer):
+    """Old case sheets and documents. `files` (one or more) is accepted on upload; files are only reachable
+    through `view_url` / `download_url`, which check the caller's role."""
+
+    category_display = serializers.CharField(source="get_category_display", read_only=True)
+    uploaded_by = serializers.StringRelatedField(source="created_by", read_only=True)
+    uploaded_at = serializers.DateTimeField(source="created_at", read_only=True)
+    view_url = serializers.SerializerMethodField()
+    download_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = m.PatientAttachment
+        fields = ("id", "patient", "visit", "category", "category_display", "description", "document_date",
+                  "original_filename", "file_size", "content_type", "uploaded_by", "uploaded_at",
+                  "view_url", "download_url")
+        read_only_fields = ("original_filename", "file_size", "content_type")
+
+    def get_view_url(self, obj) -> str:
+        return reverse("patient-attachment-file", args=[obj.pk])
+
+    def get_download_url(self, obj) -> str:
+        return f"{reverse('patient-attachment-file', args=[obj.pk])}?download=1"
+
+    def get_fields(self):
+        fields = super().get_fields()
+        if self.instance is not None and not isinstance(self.instance, (list, tuple)):
+            fields["patient"].read_only = True  # an attachment never moves to another patient
+        return fields
+
+    def validate_category(self, value):
+        allowed = attachment_categories(_request_user(self))
+        if allowed is not None and value not in allowed:
+            raise serializers.ValidationError("You can only attach lab reports.")
+        return value
+
+    def validate(self, data):
+        patient = data.get("patient") or getattr(self.instance, "patient", None)
+        visit = data.get("visit")
+        if visit is not None and patient is not None and visit.patient_id != patient.pk:
+            raise serializers.ValidationError({"visit": "That visit belongs to another patient."})
         return data
 
 

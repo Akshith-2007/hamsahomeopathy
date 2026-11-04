@@ -10,7 +10,10 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.rbac import can_view, can_view_report, home_view_name, role_of, section_access
+from django.db.models import Count, Q
+
+from accounts.rbac import attachment_categories, can_view, can_view_report, home_view_name, role_of, section_access
+from clinic import attachments as attachsvc
 from clinic import lab as labsvc
 from clinic import models as m
 from clinic import pharmacy, relationships, services
@@ -111,6 +114,14 @@ class PatientViewSet(SectionViewSet):
     parser_classes = UPLOAD_PARSERS
     filterset_fields = {"gender": ["exact"], "registration_date": ["exact", "gte", "lte"], "age": ["gte", "lte"]}
     ordering_fields = ["registration_date", "full_name", "opd_number", "age"]
+
+    def get_queryset(self):
+        # attachment_count = attachments this user may see, without a query per patient.
+        categories = attachment_categories(self.request.user)
+        visible = Q(attachments__is_deleted=False)
+        if categories is not None:
+            visible &= Q(attachments__category__in=categories or ["-"])
+        return super().get_queryset().annotate(attachment_count=Count("attachments", filter=visible))
 
     @property
     def search_fields(self):
@@ -376,6 +387,49 @@ PatientImageViewSet = section_viewset(
     m.PatientImage, "patient_images", s.PatientImageSerializer,
     filters=["patient", "visit", "stage"], parsers=UPLOAD_PARSERS, select=("patient",),
 )
+
+
+class PatientAttachmentViewSet(SectionViewSet):
+    """Old case sheets and other documents on a patient's record.
+
+    Upload with multipart: `patient`, `category`, optional `visit`, `description`, `document_date` and one or
+    more `files` (a single `file` also works). DELETE is a soft delete. Lab staff see and upload lab reports only.
+    The file itself is served by `GET /api/attachments/<id>/file/` (`?download=1` to download).
+    """
+
+    section = "attachments"
+    queryset = m.PatientAttachment.objects.select_related("patient", "visit", "created_by")
+    serializer_class = s.PatientAttachmentSerializer
+    parser_classes = UPLOAD_PARSERS
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    filterset_fields = {"patient": ["exact"], "visit": ["exact"], "category": ["exact"],
+                        "document_date": ["exact", "gte", "lte"]}
+    ordering_fields = ["created_at", "document_date", "id"]
+    ordering = ["-created_at", "-id"]
+
+    def get_queryset(self):
+        return attachsvc.visible_attachments(self.request.user, super().get_queryset())
+
+    @extend_schema(responses={201: s.PatientAttachmentSerializer(many=True)})
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        files = request.FILES.getlist("files") or request.FILES.getlist("file")
+        errors = attachsvc.validate_uploads(files, request.user, data.get("category", m.PatientAttachment.Category.OLD_CASE_SHEET),
+                                            data.get("document_date"))
+        if errors:
+            raise ValidationError({"files": errors})
+        created = attachsvc.attach(
+            data["patient"], files, category=data.get("category", m.PatientAttachment.Category.OLD_CASE_SHEET),
+            description=data.get("description", ""), document_date=data.get("document_date"), visit=data.get("visit"),
+        )
+        return Response(self.get_serializer(created, many=True).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(responses={(200, "application/octet-stream"): bytes})
+    @action(detail=True, methods=["get"], url_path="file", url_name="file")
+    def file(self, request, pk=None):
+        return attachsvc.file_response(self.get_object(), download=request.query_params.get("download") == "1")
 
 
 class InvestigationViewSet(SectionViewSet):

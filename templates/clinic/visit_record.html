@@ -33,11 +33,13 @@
         <ul class="nav nav-tabs card-header-tabs" role="tablist">
           <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-visits" type="button" role="tab"><i class="bi bi-clock-history"></i> Previous visits <span class="badge rounded-pill text-bg-primary">{{ previous_visits|length }}</span></button></li>
           <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-timeline" type="button" role="tab"><i class="bi bi-bar-chart-steps"></i> Timeline</button></li>
+          {% if attachments is not None %}<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-attachments" type="button" role="tab"><i class="bi bi-paperclip"></i> Attachments <span class="badge rounded-pill text-bg-primary">{{ attachments|length }}</span></button></li>{% endif %}
         </ul>
       </div>
       <div class="tab-content">
         <div class="tab-pane fade show active" id="tab-visits" role="tabpanel">{% include "clinic/_previous_visits_grid.html" %}</div>
         <div class="tab-pane fade p-3" id="tab-timeline" role="tabpanel">{% include "clinic/_timeline.html" with current_visit=visit %}</div>
+        {% if attachments is not None %}<div class="tab-pane fade" id="tab-attachments" role="tabpanel">{% include "clinic/_attachments.html" with compact=True %}</div>{% endif %}
       </div>
     </div>
     {% elif previous_visits %}

@@ -15,5 +15,5 @@ class ProtectedS3Storage(S3Storage):
     def url(self, name, parameters=None, expire=None, http_method=None):
         return f"{settings.MEDIA_URL}{quote(name)}"
 
-    def signed_url(self, name):
-        return super().url(name)
+    def signed_url(self, name, parameters=None):
+        return super().url(name, parameters=parameters)

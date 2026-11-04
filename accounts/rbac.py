@@ -42,6 +42,7 @@ SECTION_RULES = {
     "external_reports": (STAFF, STAFF),           # reports not produced by the clinic lab
     "past_treatment": (STAFF, STAFF),
     "patient_images": (STAFF, CLINICAL),
+    "attachments": (ALL, ALL),                    # old case sheets & documents (lab: lab reports only)
     "repertory": (CLINICAL, CLINICAL),
     "prescription": (CLINICAL, CLINICAL),
     "followups": (CLINICAL, CLINICAL),            # follow-up progress-notes grid
@@ -120,6 +121,18 @@ def visible_report_sources(user):
     if can_view(user, "external_reports"):
         return None
     return ["LAB"] if can_view(user, "investigation_reports") else []
+
+
+LAB_ATTACHMENT_CATEGORIES = ("LAB_REPORT",)
+
+
+def attachment_categories(user):
+    """Patient-attachment categories the user may see and upload: None means all of them."""
+    if not can_view(user, "attachments"):
+        return []
+    if role_of(user) == L:
+        return list(LAB_ATTACHMENT_CATEGORIES)
+    return None
 
 
 def hides_superseded_reports(user):

@@ -271,6 +271,12 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 MAX_DOCUMENT_UPLOAD_MB = 20
 MAX_IMAGE_UPLOAD_MB = 5
+# Patient attachments (old case sheets migrated from paper, outside reports, scans).
+ATTACHMENT_MAX_UPLOAD_MB = float(env("ATTACHMENT_MAX_UPLOAD_MB", "10"))
+ATTACHMENT_MAX_FILES = int(env("ATTACHMENT_MAX_FILES", "10"))
+# Behind nginx: hand protected files to nginx with X-Accel-Redirect instead of streaming them through
+# Python. Set to the nginx `internal` location that maps to MEDIA_ROOT, e.g. /protected-media/.
+MEDIA_ACCEL_REDIRECT_PREFIX = env("MEDIA_ACCEL_REDIRECT_PREFIX", "")
 # Hard cap per request imposed by the host (Vercel rejects bodies over 4.5 MB). 0 = no cap.
 MAX_REQUEST_MB = float(env("MAX_REQUEST_MB", "4.4" if ON_VERCEL else "0"))
 # Shared secret Vercel Cron sends as "Authorization: Bearer <CRON_SECRET>".

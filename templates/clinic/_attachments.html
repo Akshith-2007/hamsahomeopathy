@@ -1,0 +1,33 @@
+{# Patient attachments table. Needs `attachments` and `attachment_access`; `compact` hides the uploader columns. #}
+<div class="table-responsive">
+  <table class="table table-hover mb-0 align-middle">
+    <thead class="table-light"><tr><th>File</th><th>Category</th><th>Document date</th>{% if not compact %}<th>Uploaded by</th>{% endif %}<th>Uploaded on</th><th class="text-end">Actions</th></tr></thead>
+    <tbody>
+    {% for a in attachments %}
+      <tr>
+        <td>
+          <i class="bi bi-{% if a.is_pdf %}file-earmark-pdf text-danger{% elif a.is_image %}file-earmark-image text-primary{% else %}file-earmark-text{% endif %}"></i>
+          <a href="{% url 'attachment_file' a.pk %}" target="_blank" rel="noopener" title="{{ a.original_filename }}">{{ a.original_filename|truncatechars:40 }}</a>
+          {% if a.description %}<div class="small text-muted">{{ a.description }}</div>{% endif %}
+        </td>
+        <td><span class="badge {% if a.category == 'OLD_CASE_SHEET' %}text-bg-secondary{% else %}text-bg-light border{% endif %}">{{ a.get_category_display }}</span></td>
+        <td class="text-nowrap">{{ a.document_date|date:"d-M-Y"|default:"—" }}</td>
+        {% if not compact %}<td class="small">{{ a.created_by|default:"—" }}</td>{% endif %}
+        <td class="small text-nowrap">{{ a.created_at|date:"d-M-Y" }}</td>
+        <td class="text-end text-nowrap">
+          <a class="btn btn-sm btn-outline-primary" href="{% url 'attachment_file' a.pk %}" target="_blank" rel="noopener" title="View"><i class="bi bi-eye"></i></a>
+          <a class="btn btn-sm btn-outline-secondary" href="{% url 'attachment_file' a.pk %}?download=1" title="Download"><i class="bi bi-download"></i></a>
+          {% if attachment_access.delete %}
+          <form method="post" action="{% url 'attachment_delete' a.pk %}" class="d-inline" data-confirm="Remove “{{ a.original_filename }}” from this patient's record? A copy is kept in the audit trail.">{% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}#attachments">
+            <button class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="text-muted text-center py-3">{{ empty_text|default:"No old case sheets or documents attached yet." }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
