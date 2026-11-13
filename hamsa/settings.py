@@ -4,6 +4,7 @@ All deployment-specific values come from environment variables so the same
 image runs under Docker Compose on the server or in a local virtualenv.
 """
 import os
+import sys
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -226,8 +227,9 @@ else:
 STORAGES = {
     "default": _default_storage,
     "staticfiles": {
+        # The manifest only exists after collectstatic (done in the image build); tests run without it.
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
-        if not DEBUG
+        if not (DEBUG or sys.argv[1:2] == ["test"])
         else "django.contrib.staticfiles.storage.StaticFilesStorage"
     },
 }
