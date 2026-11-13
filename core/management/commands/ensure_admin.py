@@ -1,4 +1,4 @@
-"""Create the first administrator from environment variables (for hosts without a shell, e.g. Render).
+"""Create the first administrator from environment variables (run by the container entrypoint on every start).
 
 Uses DJANGO_ADMIN_USERNAME (default "admin") and DJANGO_ADMIN_PASSWORD. Does nothing if that
 user already exists, so it is safe to run on every start and never resets a changed password.

@@ -59,12 +59,6 @@ if env_bool("DJANGO_ALLOW_LAN"):
         _lan_ips = []
     ALLOWED_HOSTS += [_hostname, f"{_hostname}.local", *_lan_ips]
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
-# Render (and similar hosts) tell the app its public hostname.
-_render_host = env("RENDER_EXTERNAL_HOSTNAME")
-if _render_host:
-    ALLOWED_HOSTS.append(_render_host)
-    CSRF_TRUSTED_ORIGINS.append(f"https://{_render_host}")
-
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -125,25 +119,6 @@ if env("DB_ENGINE", "postgres") == "sqlite":
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": Path(os.environ.get("SQLITE_PATH", BASE_DIR / "db.sqlite3")),
-        }
-    }
-elif env("DATABASE_URL"):
-    # Hosted PostgreSQL (Render, Neon/Vercel): postgres://user:password@host:port/dbname?sslmode=require
-    from urllib.parse import parse_qsl, unquote, urlparse
-
-    _db = urlparse(env("DATABASE_URL"))
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": _db.path.lstrip("/"),
-            "USER": unquote(_db.username or ""),
-            "PASSWORD": unquote(_db.password or ""),
-            "HOST": _db.hostname or "localhost",
-            "PORT": str(_db.port or 5432),
-            # Serverless functions shouldn't hold connections open between requests.
-            "CONN_MAX_AGE": int(env("POSTGRES_CONN_MAX_AGE", "60")),
-            "CONN_HEALTH_CHECKS": True,
-            "OPTIONS": dict(parse_qsl(_db.query)),  # e.g. sslmode=require, channel_binding=require
         }
     }
 else:
