@@ -33,6 +33,8 @@ Open http://127.0.0.1:5000 and sign in with one of the demo accounts. All of the
 | `reception` | Attender / Receptionist |
 | `lab`       | Lab Assistant           |
 
+With `DJANGO_DEBUG=false` (for example from a local `.env`), run `python manage.py collectstatic --noinput` once before `runserver`, and again after CSS/JS changes. Otherwise every page shows "Something went wrong" (`Missing staticfiles manifest entry`). The Docker image does this at build time.
+
 To use PostgreSQL locally, leave `DB_ENGINE` unset and set the `POSTGRES_*` variables from `.env.example`.
 
 Run the tests with `DB_ENGINE=sqlite python manage.py test` (PowerShell: `$env:DB_ENGINE="sqlite"; python manage.py test`). The suite also runs unchanged against PostgreSQL: leave `DB_ENGINE` unset and point the `POSTGRES_*` variables at a server where the user may create a test database.
