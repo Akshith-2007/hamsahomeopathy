@@ -31,8 +31,8 @@ def env(name, default=None):
 
 
 def env_bool(name, default=False):
-    value = os.environ.get(name)
-    if value is None:
+    value = os.environ.get(name, "").strip()
+    if not value:  # unset or blank (e.g. "DJANGO_SSL_REDIRECT=" in .env) means "use the default"
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
@@ -41,14 +41,26 @@ def env_list(name, default=""):
     return [item.strip() for item in os.environ.get(name, default).split(",") if item.strip()]
 
 
-_INSECURE_KEY = "dev-insecure-change-me"
-SECRET_KEY = env("DJANGO_SECRET_KEY", _INSECURE_KEY)
 DEBUG = env_bool("DJANGO_DEBUG", False)
-if not DEBUG and SECRET_KEY == _INSECURE_KEY and not env_bool("DJANGO_ALLOW_INSECURE_KEY"):
-    raise ImproperlyConfigured("Set DJANGO_SECRET_KEY (or DJANGO_DEBUG=true for local development).")
+# Only local development (DEBUG on) may run without a real key.
+SECRET_KEY = env("DJANGO_SECRET_KEY") or ("dev-insecure-change-me" if DEBUG else "")
+if not SECRET_KEY:
+    raise ImproperlyConfigured("Set DJANGO_SECRET_KEY in .env (or DJANGO_DEBUG=true for local development).")
 
-ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
-CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
+# --- Public address -------------------------------------------------------------
+# Domain mode (DOMAIN=example.com): HTTPS through Caddy for DOMAIN and www.DOMAIN.
+# IP mode (DOMAIN empty): plain HTTP on SERVER_IP, for testing only, never real patient data.
+DOMAIN = env("DOMAIN", "").strip().lower()
+SERVER_IP = env("SERVER_IP", "").strip()
+DOMAIN_MODE = bool(DOMAIN)
+if DOMAIN_MODE and DEBUG:
+    raise ImproperlyConfigured("DJANGO_DEBUG must be off when DOMAIN is set (it would expose patient data in error pages).")
+if DOMAIN_MODE:
+    _hosts, _scheme = [DOMAIN, f"www.{DOMAIN}"], "https"
+else:
+    _hosts, _scheme = [h for h in (SERVER_IP, "localhost", "127.0.0.1") if h], "http"
+ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS") or _hosts
+CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS") or [f"{_scheme}://{h}" for h in _hosts]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -153,20 +165,21 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_HTTPONLY = False  # the case-record JS reads it for fetch() calls
 
-SECURE_COOKIES = env_bool("DJANGO_SECURE_COOKIES", not DEBUG)
+# HTTPS hardening: on in domain mode, off in IP mode (plain HTTP); each switch can be overridden.
+SECURE_COOKIES = env_bool("DJANGO_SECURE_COOKIES", DOMAIN_MODE)
 SESSION_COOKIE_SECURE = SECURE_COOKIES
 CSRF_COOKIE_SECURE = SECURE_COOKIES
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
 X_FRAME_OPTIONS = "DENY"  # no page of the app is ever shown inside a frame
-if env_bool("DJANGO_BEHIND_TLS_PROXY", False):
+# Caddy terminates TLS and nginx passes its X-Forwarded-Proto on (see docker/nginx.conf).
+if env_bool("DJANGO_BEHIND_TLS_PROXY", DOMAIN_MODE):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-# Enable once the site is HTTPS-only.
-SECURE_SSL_REDIRECT = env_bool("DJANGO_SSL_REDIRECT", False)
-# HSTS: once HTTPS works, set DJANGO_HSTS_SECONDS=31536000 (one year).
-SECURE_HSTS_SECONDS = int(env("DJANGO_HSTS_SECONDS", "0"))
-SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("DJANGO_HSTS_INCLUDE_SUBDOMAINS", True)
-SECURE_HSTS_PRELOAD = env_bool("DJANGO_HSTS_PRELOAD", True)
+SECURE_SSL_REDIRECT = env_bool("DJANGO_SSL_REDIRECT", DOMAIN_MODE)
+# Browsers remember HSTS: start at one hour, raise to 31536000 (one year) after a week without problems.
+SECURE_HSTS_SECONDS = int(env("HSTS_SECONDS") or "3600") if DOMAIN_MODE else 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("HSTS_INCLUDE_SUBDOMAINS", True)
+SECURE_HSTS_PRELOAD = env_bool("HSTS_PRELOAD", False)
 
 # Sign-in throttling per client IP (in addition to locking an account after MAX_FAILED_LOGINS).
 LOGIN_RATE_LIMIT = int(env("LOGIN_RATE_LIMIT", "20"))              # failed attempts allowed per window
