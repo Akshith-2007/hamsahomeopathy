@@ -44,10 +44,7 @@ def env_list(name, default=""):
 _INSECURE_KEY = "dev-insecure-change-me"
 SECRET_KEY = env("DJANGO_SECRET_KEY", _INSECURE_KEY)
 DEBUG = env_bool("DJANGO_DEBUG", False)
-# Build machines (Vercel sets CI=1) import settings to read the app and collect static files;
-# that needs no secret, so a throwaway key is fine there. Running sites must set a real key.
-_BUILDING = env_bool("CI") and not env("DJANGO_SECRET_KEY")
-if not DEBUG and SECRET_KEY == _INSECURE_KEY and not _BUILDING and not env_bool("DJANGO_ALLOW_INSECURE_KEY"):
+if not DEBUG and SECRET_KEY == _INSECURE_KEY and not env_bool("DJANGO_ALLOW_INSECURE_KEY"):
     raise ImproperlyConfigured("Set DJANGO_SECRET_KEY (or DJANGO_DEBUG=true for local development).")
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
@@ -68,14 +65,6 @@ if _render_host:
     ALLOWED_HOSTS.append(_render_host)
     CSRF_TRUSTED_ORIGINS.append(f"https://{_render_host}")
 
-# Vercel sets VERCEL=1 and the deployment's hostnames.
-ON_VERCEL = env_bool("VERCEL")
-if ON_VERCEL:
-    for _name in ("VERCEL_URL", "VERCEL_BRANCH_URL", "VERCEL_PROJECT_PRODUCTION_URL"):
-        _host = env(_name)
-        if _host and _host not in ALLOWED_HOSTS:
-            ALLOWED_HOSTS.append(_host)
-            CSRF_TRUSTED_ORIGINS.append(f"https://{_host}")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -152,7 +141,7 @@ elif env("DATABASE_URL"):
             "HOST": _db.hostname or "localhost",
             "PORT": str(_db.port or 5432),
             # Serverless functions shouldn't hold connections open between requests.
-            "CONN_MAX_AGE": int(env("POSTGRES_CONN_MAX_AGE", "0" if ON_VERCEL else "60")),
+            "CONN_MAX_AGE": int(env("POSTGRES_CONN_MAX_AGE", "60")),
             "CONN_HEALTH_CHECKS": True,
             "OPTIONS": dict(parse_qsl(_db.query)),  # e.g. sslmode=require, channel_binding=require
         }
@@ -205,10 +194,10 @@ CSRF_COOKIE_SECURE = SECURE_COOKIES
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
 X_FRAME_OPTIONS = "DENY"  # no page of the app is ever shown inside a frame
-if env_bool("DJANGO_BEHIND_TLS_PROXY", ON_VERCEL):
+if env_bool("DJANGO_BEHIND_TLS_PROXY", False):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # Enable once the site is HTTPS-only.
-SECURE_SSL_REDIRECT = env_bool("DJANGO_SSL_REDIRECT", ON_VERCEL)
+SECURE_SSL_REDIRECT = env_bool("DJANGO_SSL_REDIRECT", False)
 # HSTS: once HTTPS works, set DJANGO_HSTS_SECONDS=31536000 (one year).
 SECURE_HSTS_SECONDS = int(env("DJANGO_HSTS_SECONDS", "0"))
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("DJANGO_HSTS_INCLUDE_SUBDOMAINS", True)
@@ -229,8 +218,8 @@ DATE_INPUT_FORMATS = ["%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"]
 STATIC_URL = "/static/"
 STATIC_ROOT = Path(env("STATIC_ROOT", BASE_DIR / "staticfiles"))
 STATICFILES_DIRS = [BASE_DIR / "static"]
-# Uploads go to S3-compatible object storage (Cloudflare R2, AWS S3, …) when a bucket is configured,
-# which is required on Vercel because its filesystem is not persistent.
+# Optional: uploads go to private S3-compatible object storage (Cloudflare R2, AWS S3, …) when a bucket
+# is configured. Default: local disk (a Docker volume on the server).
 S3_BUCKET_NAME = env("S3_BUCKET_NAME")
 if S3_BUCKET_NAME:
     _default_storage = {
@@ -259,17 +248,12 @@ else:
 STORAGES = {
     "default": _default_storage,
     "staticfiles": {
-        # On Vercel the build's collected files (and manifest) go to the CDN, not into the function,
-        # so a manifest-based storage would fail at runtime ("Missing staticfiles manifest entry").
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
-        if not (DEBUG or ON_VERCEL)
+        if not DEBUG
         else "django.contrib.staticfiles.storage.StaticFilesStorage"
     },
 }
 
-# Vercel serves /static/ from its CDN; WhiteNoise finders are a fallback that serves the files from the
-# app's own static folders if a request ever reaches the function (supported by Vercel's Django builder).
-WHITENOISE_USE_FINDERS = ON_VERCEL
 
 # Uploaded clinical documents live on local disk (a PersistentVolume in k8s) and
 # are only served through an authenticated, role-checked view.
@@ -285,11 +269,6 @@ ATTACHMENT_MAX_FILES = int(env("ATTACHMENT_MAX_FILES", "10"))
 # Behind nginx: hand protected files to nginx with X-Accel-Redirect instead of streaming them through
 # Python. Set to the nginx `internal` location that maps to MEDIA_ROOT, e.g. /protected-media/.
 MEDIA_ACCEL_REDIRECT_PREFIX = env("MEDIA_ACCEL_REDIRECT_PREFIX", "")
-# Hard cap per request imposed by the host (Vercel rejects bodies over 4.5 MB). 0 = no cap.
-MAX_REQUEST_MB = float(env("MAX_REQUEST_MB", "4.4" if ON_VERCEL else "0"))
-# Shared secret Vercel Cron sends as "Authorization: Bearer <CRON_SECRET>".
-CRON_SECRET = env("CRON_SECRET", "")
-
 # --- REST framework -------------------------------------------------------------
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [

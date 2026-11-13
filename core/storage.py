@@ -2,8 +2,8 @@
 
 The bucket stays private. `url()` returns the app's own /media/<path> address so every link
 still passes through the authenticated, role-checked `protected_media` view, which then
-redirects to a short-lived signed URL from `signed_url()`. This also keeps large files off
-the app server (Vercel limits responses to 4.5 MB).
+redirects to a short-lived signed URL from `signed_url()`, so large files never pass through
+the app server.
 """
 from urllib.parse import quote
 
