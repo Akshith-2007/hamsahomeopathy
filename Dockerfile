@@ -20,8 +20,7 @@ RUN sed -i 's/\r$//' docker/entrypoint.sh && chmod +x docker/entrypoint.sh \
  && mkdir -p /app/media && chown -R app:app /app/media
 
 # The app always runs as the unprivileged "app" user (uid 1000). The entrypoint starts as root only to
-# hand a freshly mounted uploads disk to that user, then drops privileges before anything else runs.
-# Kubernetes starts the container as uid 1000 directly (see k8s/30-web-deployment.yaml).
+# hand a freshly mounted uploads volume to that user, then drops privileges before anything else runs.
 EXPOSE 5000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \

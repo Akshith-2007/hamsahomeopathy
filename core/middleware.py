@@ -58,8 +58,8 @@ def get_client_ip(request):
 class HealthCheckMiddleware:
     """Answer /healthz and /readyz before ALLOWED_HOSTS validation.
 
-    Kubernetes probes use the pod IP as the Host header, which would otherwise
-    be rejected with 400 and make the pod look unhealthy.
+    Docker healthchecks and uptime monitors may send a Host header that is not in
+    ALLOWED_HOSTS (e.g. 127.0.0.1); that must not turn into a 400 "unhealthy".
     """
 
     def __init__(self, get_response):

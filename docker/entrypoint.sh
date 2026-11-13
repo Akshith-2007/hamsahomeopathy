@@ -1,9 +1,8 @@
 #!/bin/sh
 set -e
 
-# Started as root (docker-compose, Render): make sure the uploads folder - possibly a freshly
-# mounted persistent disk owned by root - belongs to the app user, then re-run as that user.
-# Kubernetes already starts us as uid 1000 (see k8s/30-web-deployment.yaml), so this is skipped there.
+# Started as root: make sure the uploads folder - possibly a freshly mounted volume owned by
+# root - belongs to the app user, then re-run as that user.
 if [ "$(id -u)" = "0" ]; then
   mkdir -p "${MEDIA_ROOT:-/app/media}"
   chown -R app:app "${MEDIA_ROOT:-/app/media}"

@@ -1,7 +1,7 @@
 """Django settings for the Hamsa Homeopathy case management system.
 
 All deployment-specific values come from environment variables so the same
-image runs under docker-compose, Kubernetes, or a local virtualenv.
+image runs under Docker Compose on the server or in a local virtualenv.
 """
 import os
 from pathlib import Path
@@ -230,7 +230,7 @@ STORAGES = {
 }
 
 
-# Uploaded clinical documents live on local disk (a PersistentVolume in k8s) and
+# Uploaded clinical documents live on local disk (a Docker volume on the server) and
 # are only served through an authenticated, role-checked view.
 MEDIA_URL = "/media/"
 MEDIA_ROOT = Path(env("MEDIA_ROOT", BASE_DIR / "media"))
@@ -295,7 +295,7 @@ LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {"plain": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}},
-    # stdout: collected by Docker / Kubernetes / the hosting provider.
+    # stdout: collected by Docker (docker compose logs).
     "handlers": {"console": {"class": "logging.StreamHandler", "stream": "ext://sys.stdout", "formatter": "plain"}},
     "root": {"handlers": ["console"], "level": env("LOG_LEVEL", "INFO")},
     "loggers": {
