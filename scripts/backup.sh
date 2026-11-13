@@ -24,20 +24,23 @@ user="$(env_get POSTGRES_USER)"; user="${user:-hamsa}"
 stamp="$(date +%Y-%m-%d_%H%M)"
 mkdir -p "$BACKUP_DIR"
 
-encrypt() {  # stdin -> $1 (written as $1.part first, so a failed run never leaves a file that looks complete)
+encrypt() {  # stdin -> $1
     gpg --batch --yes --quiet --pinentry-mode loopback --passphrase-file "$PASS_FILE" \
-        --symmetric --cipher-algo AES256 -o "$1.part"
-    mv "$1.part" "$1"
+        --symmetric --cipher-algo AES256 -o "$1"
 }
+# Write to .part and rename only after the whole pipeline succeeded (pipefail stops the script before
+# the mv), so a failed dump never leaves a file that looks like a good backup.
 trap 'rm -f "$BACKUP_DIR"/*.part' EXIT
 
 info "Backing up database '$db'"
 db_file="$BACKUP_DIR/hamsa-db-$stamp.dump.gpg"
-compose exec -T db pg_dump -U "$user" -d "$db" -Fc | encrypt "$db_file"
+compose exec -T db pg_dump -U "$user" -d "$db" -Fc | encrypt "$db_file.part"
+mv "$db_file.part" "$db_file"
 
 info "Backing up uploaded files"
 media_file="$BACKUP_DIR/hamsa-media-$stamp.tar.gz.gpg"
-compose exec -T web tar -C /app/media -czf - . | encrypt "$media_file"
+compose exec -T web tar -C /app/media -czf - . | encrypt "$media_file.part"
+mv "$media_file.part" "$media_file"
 ok "Saved $(du -h "$db_file" | cut -f1) $db_file"
 ok "Saved $(du -h "$media_file" | cut -f1) $media_file"
 

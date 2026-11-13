@@ -36,8 +36,9 @@ magic="$( { decrypt "$dump" 2> /dev/null || true; } | head -c 5)"
 db="$(env_get POSTGRES_DB)"; db="${db:-hamsa}"
 user="$(env_get POSTGRES_USER)"; user="${user:-hamsa}"
 compose up -d db
-for _ in $(seq 1 30); do compose exec -T db pg_isready -q -U "$user" -d "$db" && break; sleep 2; done
-tables="$(compose exec -T db psql -U "$user" -d "$db" -tAc "select count(*) from pg_tables where schemaname = 'public'" | tr -d '[:space:]')"
+for _ in $(seq 1 30); do compose exec -T db pg_isready -q -U "$user" -d "$db" < /dev/null && break; sleep 2; done
+# </dev/null: "compose exec" would otherwise swallow the answers typed at the prompts below.
+tables="$(compose exec -T db psql -U "$user" -d "$db" -tAc "select count(*) from pg_tables where schemaname = 'public'" < /dev/null | tr -d '[:space:]')"
 
 cat <<EOF
 
@@ -53,10 +54,10 @@ if [ "$tables" != "0" ]; then
     $wipe || die "Database '$db' is not empty. Nothing was changed.
        To ERASE it and restore, run again with --wipe (only if you are sure this is what you want)."
     printf '\033[1;31m  --wipe: ALL CURRENT DATA IN "%s" WILL BE PERMANENTLY DELETED.\033[0m\n' "$db"
-    read -r -p "  Type the database name ($db) to confirm the wipe: " answer
+    read -r -p "  Type the database name ($db) to confirm the wipe: " answer || die "Cancelled. Nothing was changed."
     [ "$answer" = "$db" ] || die "Cancelled. Nothing was changed."
 fi
-read -r -p "  Type RESTORE to continue: " answer
+read -r -p "  Type RESTORE to continue: " answer || die "Cancelled. Nothing was changed."
 [ "$answer" = "RESTORE" ] || die "Cancelled. Nothing was changed."
 
 trap 'warn "Restore FAILED part-way. The app is stopped. Fix the problem above, then run again with --wipe."' ERR
@@ -64,8 +65,8 @@ info "Stopping the app"
 compose stop web nginx
 if [ "$tables" != "0" ]; then
     info "Dropping and recreating database '$db'"
-    compose exec -T db dropdb -U "$user" --force "$db"
-    compose exec -T db createdb -U "$user" -O "$user" "$db"
+    compose exec -T db dropdb -U "$user" --force "$db" < /dev/null
+    compose exec -T db createdb -U "$user" -O "$user" "$db" < /dev/null
 fi
 
 info "Restoring the database"
