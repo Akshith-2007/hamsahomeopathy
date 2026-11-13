@@ -1,9 +1,10 @@
 """Django settings for the Hamsa Homeopathy case management system.
 
 All deployment-specific values come from environment variables so the same
-image runs under docker-compose, Kubernetes, or a local virtualenv.
+image runs under Docker Compose on the server or in a local virtualenv.
 """
 import os
+import sys
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -31,8 +32,8 @@ def env(name, default=None):
 
 
 def env_bool(name, default=False):
-    value = os.environ.get(name)
-    if value is None:
+    value = os.environ.get(name, "").strip()
+    if not value:  # unset or blank (e.g. "DJANGO_SSL_REDIRECT=" in .env) means "use the default"
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
@@ -41,41 +42,26 @@ def env_list(name, default=""):
     return [item.strip() for item in os.environ.get(name, default).split(",") if item.strip()]
 
 
-_INSECURE_KEY = "dev-insecure-change-me"
-SECRET_KEY = env("DJANGO_SECRET_KEY", _INSECURE_KEY)
 DEBUG = env_bool("DJANGO_DEBUG", False)
-# Build machines (Vercel sets CI=1) import settings to read the app and collect static files;
-# that needs no secret, so a throwaway key is fine there. Running sites must set a real key.
-_BUILDING = env_bool("CI") and not env("DJANGO_SECRET_KEY")
-if not DEBUG and SECRET_KEY == _INSECURE_KEY and not _BUILDING and not env_bool("DJANGO_ALLOW_INSECURE_KEY"):
-    raise ImproperlyConfigured("Set DJANGO_SECRET_KEY (or DJANGO_DEBUG=true for local development).")
+# Only local development (DEBUG on) may run without a real key.
+SECRET_KEY = env("DJANGO_SECRET_KEY") or ("dev-insecure-change-me" if DEBUG else "")
+if not SECRET_KEY:
+    raise ImproperlyConfigured("Set DJANGO_SECRET_KEY in .env (or DJANGO_DEBUG=true for local development).")
 
-ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
-if env_bool("DJANGO_ALLOW_LAN"):
-    # Let other devices on the same Wi-Fi reach this PC by its current IP or name.
-    import socket
-
-    _hostname = socket.gethostname()
-    try:
-        _lan_ips = socket.gethostbyname_ex(_hostname)[2]
-    except OSError:
-        _lan_ips = []
-    ALLOWED_HOSTS += [_hostname, f"{_hostname}.local", *_lan_ips]
-CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
-# Render (and similar hosts) tell the app its public hostname.
-_render_host = env("RENDER_EXTERNAL_HOSTNAME")
-if _render_host:
-    ALLOWED_HOSTS.append(_render_host)
-    CSRF_TRUSTED_ORIGINS.append(f"https://{_render_host}")
-
-# Vercel sets VERCEL=1 and the deployment's hostnames.
-ON_VERCEL = env_bool("VERCEL")
-if ON_VERCEL:
-    for _name in ("VERCEL_URL", "VERCEL_BRANCH_URL", "VERCEL_PROJECT_PRODUCTION_URL"):
-        _host = env(_name)
-        if _host and _host not in ALLOWED_HOSTS:
-            ALLOWED_HOSTS.append(_host)
-            CSRF_TRUSTED_ORIGINS.append(f"https://{_host}")
+# --- Public address -------------------------------------------------------------
+# Domain mode (DOMAIN=example.com): HTTPS through Caddy for DOMAIN and www.DOMAIN.
+# IP mode (DOMAIN empty): plain HTTP on SERVER_IP, for testing only, never real patient data.
+DOMAIN = env("DOMAIN", "").strip().lower()
+SERVER_IP = env("SERVER_IP", "").strip()
+DOMAIN_MODE = bool(DOMAIN)
+if DOMAIN_MODE and DEBUG:
+    raise ImproperlyConfigured("DJANGO_DEBUG must be off when DOMAIN is set (it would expose patient data in error pages).")
+if DOMAIN_MODE:
+    _hosts, _scheme = [DOMAIN, f"www.{DOMAIN}"], "https"
+else:
+    _hosts, _scheme = [h for h in (SERVER_IP, "localhost", "127.0.0.1") if h], "http"
+ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS") or _hosts
+CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS") or [f"{_scheme}://{h}" for h in _hosts]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -138,25 +124,6 @@ if env("DB_ENGINE", "postgres") == "sqlite":
             "NAME": Path(os.environ.get("SQLITE_PATH", BASE_DIR / "db.sqlite3")),
         }
     }
-elif env("DATABASE_URL"):
-    # Hosted PostgreSQL (Render, Neon/Vercel): postgres://user:password@host:port/dbname?sslmode=require
-    from urllib.parse import parse_qsl, unquote, urlparse
-
-    _db = urlparse(env("DATABASE_URL"))
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": _db.path.lstrip("/"),
-            "USER": unquote(_db.username or ""),
-            "PASSWORD": unquote(_db.password or ""),
-            "HOST": _db.hostname or "localhost",
-            "PORT": str(_db.port or 5432),
-            # Serverless functions shouldn't hold connections open between requests.
-            "CONN_MAX_AGE": int(env("POSTGRES_CONN_MAX_AGE", "0" if ON_VERCEL else "60")),
-            "CONN_HEALTH_CHECKS": True,
-            "OPTIONS": dict(parse_qsl(_db.query)),  # e.g. sslmode=require, channel_binding=require
-        }
-    }
 else:
     DATABASES = {
         "default": {
@@ -199,20 +166,21 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_HTTPONLY = False  # the case-record JS reads it for fetch() calls
 
-SECURE_COOKIES = env_bool("DJANGO_SECURE_COOKIES", not DEBUG)
+# HTTPS hardening: on in domain mode, off in IP mode (plain HTTP); each switch can be overridden.
+SECURE_COOKIES = env_bool("DJANGO_SECURE_COOKIES", DOMAIN_MODE)
 SESSION_COOKIE_SECURE = SECURE_COOKIES
 CSRF_COOKIE_SECURE = SECURE_COOKIES
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
 X_FRAME_OPTIONS = "DENY"  # no page of the app is ever shown inside a frame
-if env_bool("DJANGO_BEHIND_TLS_PROXY", ON_VERCEL):
+# Caddy terminates TLS and nginx passes its X-Forwarded-Proto on (see docker/nginx.conf).
+if env_bool("DJANGO_BEHIND_TLS_PROXY", DOMAIN_MODE):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-# Enable once the site is HTTPS-only.
-SECURE_SSL_REDIRECT = env_bool("DJANGO_SSL_REDIRECT", ON_VERCEL)
-# HSTS: once HTTPS works, set DJANGO_HSTS_SECONDS=31536000 (one year).
-SECURE_HSTS_SECONDS = int(env("DJANGO_HSTS_SECONDS", "0"))
-SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("DJANGO_HSTS_INCLUDE_SUBDOMAINS", True)
-SECURE_HSTS_PRELOAD = env_bool("DJANGO_HSTS_PRELOAD", True)
+SECURE_SSL_REDIRECT = env_bool("DJANGO_SSL_REDIRECT", DOMAIN_MODE)
+# Browsers remember HSTS: start at one hour, raise to 31536000 (one year) after a week without problems.
+SECURE_HSTS_SECONDS = int(env("HSTS_SECONDS") or "3600") if DOMAIN_MODE else 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("HSTS_INCLUDE_SUBDOMAINS", True)
+SECURE_HSTS_PRELOAD = env_bool("HSTS_PRELOAD", False)
 
 # Sign-in throttling per client IP (in addition to locking an account after MAX_FAILED_LOGINS).
 LOGIN_RATE_LIMIT = int(env("LOGIN_RATE_LIMIT", "20"))              # failed attempts allowed per window
@@ -229,8 +197,8 @@ DATE_INPUT_FORMATS = ["%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"]
 STATIC_URL = "/static/"
 STATIC_ROOT = Path(env("STATIC_ROOT", BASE_DIR / "staticfiles"))
 STATICFILES_DIRS = [BASE_DIR / "static"]
-# Uploads go to S3-compatible object storage (Cloudflare R2, AWS S3, …) when a bucket is configured,
-# which is required on Vercel because its filesystem is not persistent.
+# Optional: uploads go to private S3-compatible object storage (Cloudflare R2, AWS S3, …) when a bucket
+# is configured. Default: local disk (a Docker volume on the server).
 S3_BUCKET_NAME = env("S3_BUCKET_NAME")
 if S3_BUCKET_NAME:
     _default_storage = {
@@ -259,19 +227,15 @@ else:
 STORAGES = {
     "default": _default_storage,
     "staticfiles": {
-        # On Vercel the build's collected files (and manifest) go to the CDN, not into the function,
-        # so a manifest-based storage would fail at runtime ("Missing staticfiles manifest entry").
+        # The manifest only exists after collectstatic (done in the image build); tests run without it.
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
-        if not (DEBUG or ON_VERCEL)
+        if not (DEBUG or sys.argv[1:2] == ["test"])
         else "django.contrib.staticfiles.storage.StaticFilesStorage"
     },
 }
 
-# Vercel serves /static/ from its CDN; WhiteNoise finders are a fallback that serves the files from the
-# app's own static folders if a request ever reaches the function (supported by Vercel's Django builder).
-WHITENOISE_USE_FINDERS = ON_VERCEL
 
-# Uploaded clinical documents live on local disk (a PersistentVolume in k8s) and
+# Uploaded clinical documents live on local disk (a Docker volume on the server) and
 # are only served through an authenticated, role-checked view.
 MEDIA_URL = "/media/"
 MEDIA_ROOT = Path(env("MEDIA_ROOT", BASE_DIR / "media"))
@@ -285,11 +249,6 @@ ATTACHMENT_MAX_FILES = int(env("ATTACHMENT_MAX_FILES", "10"))
 # Behind nginx: hand protected files to nginx with X-Accel-Redirect instead of streaming them through
 # Python. Set to the nginx `internal` location that maps to MEDIA_ROOT, e.g. /protected-media/.
 MEDIA_ACCEL_REDIRECT_PREFIX = env("MEDIA_ACCEL_REDIRECT_PREFIX", "")
-# Hard cap per request imposed by the host (Vercel rejects bodies over 4.5 MB). 0 = no cap.
-MAX_REQUEST_MB = float(env("MAX_REQUEST_MB", "4.4" if ON_VERCEL else "0"))
-# Shared secret Vercel Cron sends as "Authorization: Bearer <CRON_SECRET>".
-CRON_SECRET = env("CRON_SECRET", "")
-
 # --- REST framework -------------------------------------------------------------
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -341,7 +300,7 @@ LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {"plain": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}},
-    # stdout: collected by Docker / Kubernetes / the hosting provider.
+    # stdout: collected by Docker (docker compose logs).
     "handlers": {"console": {"class": "logging.StreamHandler", "stream": "ext://sys.stdout", "formatter": "plain"}},
     "root": {"handlers": ["console"], "level": env("LOG_LEVEL", "INFO")},
     "loggers": {

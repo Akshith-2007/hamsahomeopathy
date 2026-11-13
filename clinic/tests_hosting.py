@@ -1,4 +1,5 @@
-"""Hosting adaptations: Vercel cron endpoint, signed-URL media from object storage, env-driven settings."""
+"""Hosting: signed-URL media from object storage, env-driven settings."""
+import json
 import os
 import subprocess
 import sys
@@ -27,20 +28,6 @@ SIGNED_STORAGES = {
 }
 
 
-class CronEndpointTests(ClinicTestCase):
-    @override_settings(CRON_SECRET="s3cret")
-    def test_requires_bearer_secret(self):
-        url = reverse("cron_daily")
-        self.assertEqual(self.client.get(url).status_code, 403)
-        self.assertEqual(self.client.get(url, headers={"authorization": "Bearer wrong"}).status_code, 403)
-        response = self.client.get(url, headers={"authorization": "Bearer s3cret"})
-        self.assertEqual(response.json()["status"], "ok")
-
-    @override_settings(CRON_SECRET="")
-    def test_disabled_without_secret(self):
-        self.assertEqual(self.client.get(reverse("cron_daily"), headers={"authorization": "Bearer "}).status_code, 403)
-
-
 @override_settings(STORAGES=SIGNED_STORAGES)
 class ObjectStorageMediaTests(ClinicTestCase):
     def test_access_checked_then_redirected_to_signed_url(self):
@@ -61,30 +48,56 @@ class ObjectStorageMediaTests(ClinicTestCase):
 
 
 class SettingsFromEnvironmentTests(ClinicTestCase):
-    """Import settings in a fresh interpreter with host-style environment variables."""
+    """Import settings in a fresh interpreter with server-style environment variables."""
 
-    def settings_with(self, **env):
-        base = {k: v for k, v in os.environ.items() if not k.startswith(("VERCEL", "RENDER", "DB_", "SQLITE", "DATABASE"))}
-        # DB_ENGINE=postgres overrides the local .env (Wi-Fi hosting uses SQLite); Vercel has no .env.
+    # Blank values win over the developer's local .env (it only fills in unset variables).
+    BLANK = ("DOMAIN", "SERVER_IP", "DJANGO_ALLOWED_HOSTS", "DJANGO_CSRF_TRUSTED_ORIGINS", "DJANGO_SECURE_COOKIES",
+             "DJANGO_SSL_REDIRECT", "DJANGO_BEHIND_TLS_PROXY", "HSTS_SECONDS", "HSTS_INCLUDE_SUBDOMAINS", "HSTS_PRELOAD")
+
+    def run_settings(self, **env):
+        base = {k: v for k, v in os.environ.items() if not k.startswith(("DB_", "SQLITE"))}
+        base.update({k: "" for k in self.BLANK})
         base.update({"DJANGO_SECRET_KEY": "x" * 60, "DJANGO_DEBUG": "false", "DB_ENGINE": "postgres", **env})
         code = ("import os, json; os.environ['DJANGO_SETTINGS_MODULE']='hamsa.settings';"
-                "from django.conf import settings as s; d=s.DATABASES['default'];"
-                "print(json.dumps({'hosts': s.ALLOWED_HOSTS, 'csrf': s.CSRF_TRUSTED_ORIGINS, 'opts': d.get('OPTIONS'),"
-                "'age': d.get('CONN_MAX_AGE'), 'redirect': s.SECURE_SSL_REDIRECT, 'maxmb': s.MAX_REQUEST_MB,"
+                "from django.conf import settings as s;"
+                "print(json.dumps({'hosts': s.ALLOWED_HOSTS, 'csrf': s.CSRF_TRUSTED_ORIGINS,"
+                "'cookies': s.SESSION_COOKIE_SECURE and s.CSRF_COOKIE_SECURE, 'redirect': s.SECURE_SSL_REDIRECT,"
+                "'hsts': s.SECURE_HSTS_SECONDS, 'preload': s.SECURE_HSTS_PRELOAD,"
                 "'proxy': bool(getattr(s, 'SECURE_PROXY_SSL_HEADER', None))}))")
-        out = subprocess.run([sys.executable, "-c", code], env=base, capture_output=True, text=True,
-                             cwd=Path(__file__).resolve().parent.parent, check=True)
-        import json
+        return subprocess.run([sys.executable, "-c", code], env=base, capture_output=True, text=True,
+                              cwd=Path(__file__).resolve().parent.parent)
 
+    def settings_with(self, **env):
+        out = self.run_settings(**env)
+        self.assertEqual(out.returncode, 0, out.stderr)
         return json.loads(out.stdout.strip().splitlines()[-1])
 
-    def test_vercel_environment(self):
-        result = self.settings_with(VERCEL="1", VERCEL_URL="hamsa-abc.vercel.app",
-                                    VERCEL_PROJECT_PRODUCTION_URL="hamsa.vercel.app",
-                                    DATABASE_URL="postgres://u:p@ep-x.ap-south-1.aws.neon.tech/db?sslmode=require")
-        self.assertIn("hamsa.vercel.app", result["hosts"])
-        self.assertIn("https://hamsa-abc.vercel.app", result["csrf"])
-        self.assertEqual(result["opts"], {"sslmode": "require"})
-        self.assertEqual(result["age"], 0)
-        self.assertTrue(result["redirect"] and result["proxy"])
-        self.assertAlmostEqual(result["maxmb"], 4.4)
+    def test_ip_mode_is_plain_http(self):
+        result = self.settings_with(SERVER_IP="203.0.113.10")
+        self.assertEqual(result["hosts"], ["203.0.113.10", "localhost", "127.0.0.1"])
+        self.assertIn("http://203.0.113.10", result["csrf"])
+        self.assertFalse(result["cookies"] or result["redirect"] or result["proxy"])
+        self.assertEqual(result["hsts"], 0)
+
+    def test_domain_mode_is_https_only(self):
+        result = self.settings_with(DOMAIN="Example.com", SERVER_IP="203.0.113.10")
+        self.assertEqual(result["hosts"], ["example.com", "www.example.com"])
+        self.assertEqual(result["csrf"], ["https://example.com", "https://www.example.com"])
+        self.assertTrue(result["cookies"] and result["redirect"] and result["proxy"])
+        self.assertEqual(result["hsts"], 3600)
+        self.assertFalse(result["preload"])
+
+    def test_explicit_values_override_the_mode(self):
+        result = self.settings_with(DOMAIN="example.com", DJANGO_ALLOWED_HOSTS="a.test", DJANGO_SSL_REDIRECT="false",
+                                    HSTS_SECONDS="31536000")
+        self.assertEqual(result["hosts"], ["a.test"])
+        self.assertFalse(result["redirect"])
+        self.assertEqual(result["hsts"], 31536000)
+
+    def test_refuses_to_start_unsafely(self):
+        debug_on_domain = self.run_settings(DOMAIN="example.com", DJANGO_DEBUG="true")
+        self.assertNotEqual(debug_on_domain.returncode, 0)
+        self.assertIn("DJANGO_DEBUG must be off", debug_on_domain.stderr)
+        no_key = self.run_settings(DJANGO_SECRET_KEY="")
+        self.assertNotEqual(no_key.returncode, 0)
+        self.assertIn("Set DJANGO_SECRET_KEY", no_key.stderr)

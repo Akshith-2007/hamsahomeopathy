@@ -1,0 +1,8 @@
+# Domain mode: automatic HTTPS (Let's Encrypt) for the domain and www, HTTP redirects to HTTPS.
+# scripts/set_domain.sh replaces {$DOMAIN} with the real domain and installs this as /etc/caddy/Caddyfile.
+{$DOMAIN}, www.{$DOMAIN} {
+	request_body {
+		max_size 60MB
+	}
+	reverse_proxy 127.0.0.1:8080
+}

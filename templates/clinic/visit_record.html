@@ -108,6 +108,9 @@
     </div></div></div>
   </div>
 
+  {# ------------------------------------------------ documents: view / upload during the visit #}
+  {% if attachments is not None %}{% include "clinic/_visit_documents.html" %}{% endif %}
+
   {# ------------------------------------------------ follow-up: compare with previous visit #}
   {% if visit.visit_type == 'FOLLOW_UP' and access.followup_assessment.view %}
   {% with f=forms.followup_assessment %}
@@ -469,6 +472,14 @@
 {% endif %}
 </form>
 {% endwith %}
+
+{% if attachments is not None and attachment_access.upload %}
+{# Owner of the Documents panel's upload controls (see clinic/_visit_documents.html). #}
+<form method="post" enctype="multipart/form-data" action="{% url 'attachment_upload' patient.pk %}" id="attach-form" class="d-none">{% csrf_token %}
+  <input type="hidden" name="next" value="{{ request.get_full_path }}#visit-documents">
+  <input type="hidden" name="visit" value="{{ visit.pk }}">
+</form>
+{% endif %}
 
 {% if family and access.family_consult.edit %}{% for entry in family %}
 <form method="post" action="{% url 'consult_through_family' entry.relative.pk %}" id="consult-{{ entry.relative.pk }}" class="d-none"

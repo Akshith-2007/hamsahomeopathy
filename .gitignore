@@ -1,7 +1,23 @@
+# Python
 .venv/
+venv/
 __pycache__/
-*.pyc
-db.sqlite3
+*.py[co]
+
+# Local data: never commit databases, uploads, backups or secrets
+*.sqlite3
 media/
 staticfiles/
+backups/
+*.dump
+*.gpg
+*.tar.gz
 .env
+.env.*
+!.env.example
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,76 @@
+# Production stack for one VPS. Caddy on the host terminates HTTPS and proxies to 127.0.0.1:8080.
+#   docker compose -f docker-compose.prod.yml up -d --build      (or simply: scripts/deploy.sh)
+# Settings come from .env (see .env.example). Only nginx publishes a port, and only on localhost,
+# because Docker's port publishing bypasses ufw.
+name: hamsa
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hamsa}
+      POSTGRES_USER: ${POSTGRES_USER:-hamsa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      # DB_DATA_DIR in .env: a folder on the server (e.g. /srv/hamsa/postgres), or empty for the Docker volume.
+      - ${DB_DATA_DIR:-pgdata}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging: *logging
+
+  web:
+    build: .
+    image: hamsa-homeo:latest
+    env_file: .env
+    environment:
+      DB_ENGINE: postgres
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      RUN_MIGRATIONS: "true"
+      MEDIA_ACCEL_REDIRECT_PREFIX: /protected-media/
+    volumes:
+      # MEDIA_DATA_DIR in .env: a folder on the server (e.g. /srv/hamsa/media), or empty for the Docker volume.
+      - ${MEDIA_DATA_DIR:-media}:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    logging: *logging
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${MEDIA_DATA_DIR:-media}:/app/media:ro
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  pgdata:
+  media:

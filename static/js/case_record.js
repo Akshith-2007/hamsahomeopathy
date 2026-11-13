@@ -29,7 +29,7 @@
       files.forEach((f) => transfer.items.add(f));
       input.files = transfer.files;
       show();
-      markDirty();
+      markDirty({ target: input });
     });
   });
 
@@ -277,14 +277,47 @@
 
   /* --------------------------------------------------- unsaved changes */
   let dirty = false;
-  function markDirty() { dirty = true; }
   const recordForm = document.getElementById("case-record");
+  // The Documents panel sits inside the case sheet but belongs to #attach-form; it isn't an unsaved edit.
+  function markDirty(e) { if (!e || e.target.form === recordForm) dirty = true; }
   if (recordForm) {
     recordForm.addEventListener("input", markDirty);
     recordForm.addEventListener("change", markDirty);
     recordForm.addEventListener("submit", () => { dirty = false; });
     window.addEventListener("beforeunload", (e) => {
       if (dirty) { e.preventDefault(); e.returnValue = ""; }
+    });
+  }
+
+  /* --------------------------------------------------- documents: upload without leaving the case sheet */
+  const attachForm = document.getElementById("attach-form");
+  const docs = document.getElementById("visit-documents");
+  if (attachForm && docs) {
+    const status = docs.querySelector("[data-attach-status]");
+    const submit = docs.querySelector("[data-attach-submit]");
+    const say = (text, cls) => { status.textContent = text; status.className = `small ${cls}`; };
+    attachForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      submit.disabled = true;
+      say("Uploading…", "text-muted");
+      try {
+        const response = await fetch(attachForm.action, {
+          method: "POST", body: new FormData(attachForm), credentials: "same-origin",
+          headers: { "X-Requested-With": "fetch" },
+        });
+        const data = await response.json();
+        if (!data.ok) { say((data.errors || ["Upload failed."]).join(" "), "text-danger"); return; }
+        docs.querySelector("[data-attach-list]").innerHTML = data.html;
+        docs.querySelector("[data-attach-count]").textContent = data.count;
+        attachForm.reset();
+        docs.querySelectorAll("[data-upload] .chosen").forEach((el) => { el.textContent = ""; });
+        say(data.message, "text-success");
+      } catch (err) {
+        // Also a reply that isn't JSON, e.g. the proxy refusing a request over its size limit.
+        say("Upload failed. Check the connection and the file size, then try again.", "text-danger");
+      } finally {
+        submit.disabled = false;
+      }
     });
   }
 })();

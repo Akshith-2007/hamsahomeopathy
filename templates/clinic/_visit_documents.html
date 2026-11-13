@@ -1,0 +1,42 @@
+{# Documents on the case sheet: open the patient's files and upload new ones linked to this visit.
+   This sits inside the case-sheet <form>, and forms cannot be nested, so the upload controls belong to
+   #attach-form (rendered after the case-sheet form) through form="attach-form", and there is no delete here. #}
+<div class="col-12" id="visit-documents">
+  <div class="sec">
+    <button type="button" class="sec-head" data-bs-toggle="collapse" data-bs-target="#body-documents" aria-controls="body-documents" aria-expanded="true">
+      <i class="bi bi-paperclip"></i> Documents &amp; old case sheets
+      <span class="badge rounded-pill text-bg-light border ms-1" data-attach-count>{{ attachments|length }}</span>
+      <i class="bi bi-chevron-down chev"></i>
+    </button>
+    <div id="body-documents" class="collapse show">
+      <div class="sec-body">
+        <div data-attach-list>{% include "clinic/_attachments.html" with compact=True hide_delete=True %}</div>
+        {% if attachment_access.upload %}
+        <div class="row g-2 mt-2 align-items-end no-print">
+          <div class="col-lg-5">
+            {% include "partials/upload_zone.html" with name="attachment_files" multiple=True accept=attachment_access.accept icon="cloud-arrow-up" label="Upload documents for this visit" hint=attachment_access.hint form_id="attach-form" %}
+          </div>
+          <div class="col-sm-4 col-lg-2">
+            <label class="form-label small mb-0" for="visit-att-category">Category</label>
+            <select name="category" id="visit-att-category" class="form-select form-select-sm" form="attach-form">
+              {% for value, label in attachment_access.categories %}<option value="{{ value }}" {% if value == attachment_access.default_category %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-sm-4 col-lg-2">
+            <label class="form-label small mb-0" for="visit-att-date">Document date</label>
+            <input type="date" name="document_date" id="visit-att-date" class="form-control form-control-sm" form="attach-form">
+          </div>
+          <div class="col-sm-4 col-lg-3">
+            <label class="form-label small mb-0" for="visit-att-notes">Notes</label>
+            <input type="text" name="description" id="visit-att-notes" class="form-control form-control-sm" maxlength="500" form="attach-form" placeholder="e.g. Old case sheet 2019–2021">
+          </div>
+          <div class="col-12 d-flex flex-wrap align-items-center justify-content-end gap-2">
+            <span class="small" data-attach-status role="status"></span>
+            <button type="submit" form="attach-form" class="btn btn-sm btn-primary" data-attach-submit><i class="bi bi-upload"></i> Upload</button>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>

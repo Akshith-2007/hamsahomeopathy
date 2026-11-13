@@ -1,6 +1,6 @@
 # Hamsa Homeopathy – Case Record Management System
 
-Django 5 · Django REST Framework · PostgreSQL · Bootstrap 5 · Docker · Kubernetes
+Django 5 · Django REST Framework · PostgreSQL · Bootstrap 5 · Docker Compose · Caddy
 
 A role-based patient case-record system for a homeopathic clinic. The case-record
 screen follows the paper *Homeopathic Case Record* form section by section: patient
@@ -33,218 +33,37 @@ Open http://127.0.0.1:5000 and sign in with one of the demo accounts. All of the
 | `reception` | Attender / Receptionist |
 | `lab`       | Lab Assistant           |
 
+With `DJANGO_DEBUG=false` (for example from a local `.env`), run `python manage.py collectstatic --noinput` once before `runserver`, and again after CSS/JS changes. Otherwise every page shows "Something went wrong" (`Missing staticfiles manifest entry`). The Docker image does this at build time.
+
 To use PostgreSQL locally, leave `DB_ENGINE` unset and set the `POSTGRES_*` variables from `.env.example`.
 
 Run the tests with `DB_ENGINE=sqlite python manage.py test` (PowerShell: `$env:DB_ENGINE="sqlite"; python manage.py test`). The suite also runs unchanged against PostgreSQL: leave `DB_ENGINE` unset and point the `POSTGRES_*` variables at a server where the user may create a test database.
 
-### Use it from other devices on the same Wi-Fi
-
-```powershell
-$env:DB_ENGINE="sqlite"; $env:DJANGO_DEBUG="true"; $env:DJANGO_ALLOW_LAN="true"
-python manage.py runserver 0.0.0.0:5000
-```
-
-`DJANGO_ALLOW_LAN=true` adds this PC's current IP addresses and hostname to `ALLOWED_HOSTS`. Other phones, tablets and PCs on the Wi-Fi then open `http://<this-PC's-IP>:5000`. Find the IP with `ipconfig` (the "Wi-Fi → IPv4 Address" line).
-
-* Windows Firewall must allow Python inbound on **Private** networks, and the Wi-Fi must be marked Private.
-* Some routers enable "AP / client isolation", which blocks devices on the same network from reaching each other.
-* `DJANGO_DEBUG=true` shows error details to anyone on the network. For day-to-day clinic use, run with debug off and a real `DJANGO_SECRET_KEY`.
-
 ---
 
-## Deploy on Vercel (online)
+## Deployment
 
-Vercel runs the app as a serverless function. It detects `manage.py`, runs `collectstatic` and serves static files from its CDN. [vercel.json](vercel.json) sets the region to Mumbai (`bom1`) and a daily cron job. Vercel has no database or file disk, so you need two free add-ons:
-
-| Need | Use | Settings to add in Vercel → Project → Settings → Environment Variables |
-|---|---|---|
-| Database | **Neon PostgreSQL** (Vercel → Storage → *Create* → Neon; choose region **AWS ap-south-1 Mumbai**) | `DATABASE_URL` is added automatically by the integration |
-| Uploaded files | **Cloudflare R2** bucket (private) + an API token with read/write on it | `S3_BUCKET_NAME`, `S3_ENDPOINT_URL` (`https://<account-id>.r2.cloudflarestorage.com`), `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` |
-| Uploaded files (no credit card) | **Backblaze B2** private bucket (10 GB free) + an application key with read/write on it | `S3_BUCKET_NAME`, `S3_ENDPOINT_URL` (`https://s3.<region>.backblazeb2.com`), `S3_REGION` (e.g. `eu-central-003`), `S3_ACCESS_KEY_ID` (keyID), `S3_SECRET_ACCESS_KEY` (applicationKey) |
-| App secrets | — | `DJANGO_SECRET_KEY` (long random text), `CRON_SECRET` (random text), optionally `CLINIC_NAME`, `TIME_ZONE=Asia/Kolkata` |
-
-Steps:
-
-1. In [vercel.com](https://vercel.com), choose **Add New → Project → Import** the `hamsahomeopathy` GitHub repo. Framework: *Django* (detected).
-2. Add the Neon database and the environment variables above, then **Deploy**.
-3. **Create the tables:** on this PC, run `powershell -ExecutionPolicy Bypass -File scripts\vercel_migrate.ps1`. Paste the Neon `DATABASE_URL` when asked and choose the online `admin` password. Add `-SeedDemo` to load demo data. Run it again whenever an update adds migrations.
-4. Open `https://<project>.vercel.app` and sign in as `admin`.
-
-Limits of the Vercel version:
-
-* **4.5 MB per upload/save:** Vercel rejects larger requests, and the app warns before sending. Compress big PDFs or scans, or upload them one at a time. This also applies to old case sheets: the 10 MB attachment limit only applies on Render, Docker and Kubernetes.
-* **File storage:** uploaded files live in the private R2 bucket. The app checks the user's role, then redirects to a signed link that is valid for 5 minutes.
-* **Daily cron:** missed follow-ups and reminders run once a day at 08:00 IST through Vercel Cron (`/cron/daily/`, protected by `CRON_SECRET`).
-* **Notifications:** the bell polls every 12 seconds, so each open browser tab makes regular function calls.
-* **Data location:** patient data is stored with Neon and Cloudflare, not on the clinic PC.
-* **Package name:** the Django REST app lives in `restapi/` rather than `api/`, because Vercel reserves the top-level `api/` folder. Web addresses (`/api/...`) are unchanged.
-
-## Deploy on Render (online)
-
-The repo includes a [render.yaml](render.yaml) Blueprint: a Docker web service (Singapore region) with a 1 GB persistent disk for uploads, and a PostgreSQL database.
-
-1. Push this repo to GitHub (done).
-2. In [Render](https://dashboard.render.com), go to **New + → Blueprint** and pick the `hamsahomeopathy` repo.
-3. Enter a strong value for **`DJANGO_ADMIN_PASSWORD`** when asked. The first login will be user `admin` with that password. Render generates `DJANGO_SECRET_KEY` for you.
-4. Click **Apply**. The first build takes a few minutes. Migrations run automatically on every deploy, and the site appears at `https://hamsa-homeo.onrender.com` (or the name Render shows).
-
-Notes:
-
-* **Cost:** the web service uses a paid instance (`0.5c-512mb`), because Render only offers persistent disks on paid instances. Without a disk, uploaded photos and reports would be lost on every deploy.
-* **Database plan:** the database starts on Render's `free` plan, which is time-limited. Change `plan:` to `0.1c-256mb` (or larger) before storing real patient data, and turn on backups.
-* **Demo data:** to load it once, set `SEED_DEMO_DATA=true` in the service's Environment tab, deploy, then set it back to `false`. Change the demo passwords afterwards.
-* **Scheduled jobs:** follow-up reminders and marking missed follow-ups are not scheduled on Render by default. Add a Render Cron Job running `python manage.py mark_missed_followups && python manage.py send_followup_reminders` with the same environment, or run it from the Render shell.
-* **Settings:** the app reads Render's `DATABASE_URL` and `RENDER_EXTERNAL_HOSTNAME` automatically. HTTPS redirects, secure cookies and HSTS are switched on through the blueprint's environment variables.
-
-## Docker Compose
-
-```bash
-cp .env.example .env               # set DJANGO_SECRET_KEY, POSTGRES_PASSWORD and DJANGO_ADMIN_PASSWORD
-docker compose up --build
-```
-
-The app runs at http://localhost:5000 and signs in as `admin` with `DJANGO_ADMIN_PASSWORD` (created on first start; the password must pass the normal password rules, otherwise the log says why no admin was created). Migrations run automatically on start. Uploaded files, including old case sheets, are kept in the `media` volume and the database in `pgdata`, so both survive restarts and rebuilds. The container reports its health to Docker (`docker ps` shows *healthy*).
-
-**With nginx in front** (protected downloads are streamed by nginx with `X-Accel-Redirect`, uploads up to 60 MB per request):
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.nginx.yml up -d --build   # http://localhost:8080
-```
-
-[docker/nginx.conf](docker/nginx.conf) is the configuration; add your TLS certificate there, or put the clinic's HTTPS proxy in front of it.
-
----
-
-## Kubernetes (local cluster)
-
-The manifests in [k8s/](k8s/) work on Docker Desktop Kubernetes, minikube, kind or k3d.
-
-| File | Purpose |
-|------|---------|
-| `00-namespace.yaml` | `hamsa` namespace |
-| `01-configmap.yaml` | Non-secret settings (hosts, DB host, clinic name …) |
-| `02-secret.yaml` | Django secret key and DB credentials (**development values – replace**) |
-| `10-postgres.yaml` | PostgreSQL 16 **StatefulSet** + headless Service + 5 Gi volume claim |
-| `20-media-pvc.yaml` | 10 Gi PersistentVolumeClaim for uploaded documents/images |
-| `30-web-deployment.yaml` | Django/Gunicorn Deployment (non-root, no privilege escalation); init container runs migrations; startup and liveness `/healthz`, readiness `/readyz` |
-| `31-web-service.yaml` | NodePort Service on **30080** |
-| `32-web-ingress.yaml` | HTTPS Ingress (ingress-nginx) with a 60 MB upload limit; replace `hamsa.example.com` and create the `hamsa-tls` secret |
-| `40-followup-reminders-cronjob.yaml` | Daily job: mark missed follow-ups, then send reminders (SMS/WhatsApp, disabled by default) |
-
-### 1. Build the image where the cluster can see it
-
-```bash
-docker build -t hamsa-homeo:latest .
-
-# minikube:  minikube image load hamsa-homeo:latest
-# kind:      kind load docker-image hamsa-homeo:latest
-# k3d:       k3d image import hamsa-homeo:latest
-# Docker Desktop Kubernetes uses the local image directly.
-```
-
-### 2. Create the secret (recommended) and apply the manifests
-
-```bash
-kubectl apply -f k8s/00-namespace.yaml
-kubectl -n hamsa create secret generic hamsa-secrets \
-  --from-literal=DJANGO_SECRET_KEY="$(python -c 'import secrets;print(secrets.token_urlsafe(50))')" \
-  --from-literal=POSTGRES_USER=hamsa \
-  --from-literal=POSTGRES_PASSWORD='choose-a-strong-password'
-
-kubectl apply -k k8s/          # if you created the secret above, first remove 02-secret.yaml from kustomization.yaml
-kubectl -n hamsa rollout status statefulset/hamsa-postgres
-kubectl -n hamsa rollout status deployment/hamsa-web
-```
-
-### 3. Load demo data or create the first administrator
-
-```bash
-kubectl -n hamsa exec deploy/hamsa-web -- python manage.py seed_demo --password 'Hamsa@2026'
-# or a real admin:
-kubectl -n hamsa exec -it deploy/hamsa-web -- python manage.py createsuperuser
-```
-
-### 4. Open the app
-
-* NodePort: http://localhost:30080 (Docker Desktop). On minikube, run `minikube service -n hamsa hamsa-web --url`.
-* Port-forward: `kubectl -n hamsa port-forward svc/hamsa-web 5000:5000`, then open http://localhost:5000.
-
-If you use another hostname or port, add it to `DJANGO_ALLOWED_HOSTS` and
-`DJANGO_CSRF_TRUSTED_ORIGINS` in the ConfigMap, then run `kubectl -n hamsa rollout restart deploy/hamsa-web`.
-
-**Production notes**
-
-* Point the clinic's domain at the Ingress controller, put that hostname in `32-web-ingress.yaml` and in `DJANGO_ALLOWED_HOSTS` / `DJANGO_CSRF_TRUSTED_ORIGINS` (`https://…`), and create the TLS secret (or use cert-manager).
-* Behind HTTPS, set these in the ConfigMap (the commented values):
-  * `DJANGO_SECURE_COOKIES=true`
-  * `DJANGO_BEHIND_TLS_PROXY=true`
-  * `DJANGO_SSL_REDIRECT=true`
-  * `DJANGO_HSTS_SECONDS=31536000`
-* Create `hamsa-secrets` out-of-band (step 2) instead of using the development values in `02-secret.yaml`.
-* The media volume is `ReadWriteOnce`, so the web Deployment runs one replica. To run more replicas, switch the PVC to a `ReadWriteMany` storage class, or store uploads in S3-compatible storage (`S3_BUCKET_NAME` …).
-* Back up the database and the media volume as described under [Backups](#backups-patient-records-must-never-be-lost).
-
----
-
-## Production deployment
-
-The same image and settings run on Docker Compose, Kubernetes and Render. Everything deployment-specific comes from environment variables; [.env.example](.env.example) lists them all with safe defaults and comments.
-
-**Checklist**
-
-1. `DJANGO_DEBUG=false` (the default) and a long random `DJANGO_SECRET_KEY`. The app refuses to start without one.
-2. `DJANGO_ALLOWED_HOSTS` and `DJANGO_CSRF_TRUSTED_ORIGINS` list the real hostname (`https://…` for the origin).
-3. Database credentials in `DATABASE_URL` or `POSTGRES_*`, never in the image.
-4. HTTPS terminated in front of the app, then `DJANGO_SECURE_COOKIES=true`, `DJANGO_BEHIND_TLS_PROXY=true`, `DJANGO_SSL_REDIRECT=true`, and finally `DJANGO_HSTS_SECONDS=31536000` (HSTS also sends `includeSubDomains` and `preload`; turn those off with `DJANGO_HSTS_INCLUDE_SUBDOMAINS=false` / `DJANGO_HSTS_PRELOAD=false` if other subdomains still use plain HTTP).
-5. First administrator: set `DJANGO_ADMIN_USERNAME` / `DJANGO_ADMIN_PASSWORD`. `python manage.py ensure_admin` runs on every container start, creates the account only if it is missing, never changes an existing password and refuses weak passwords.
-6. Run `python manage.py check --deploy` with the production variables: it reports no issues.
-7. Keep `SEED_DEMO_DATA=false` on the live clinic; demo users have a published password.
-
-**What is already set up**
+The clinic runs on one Hostinger VPS (Ubuntu 24.04) with Docker Compose ([docker-compose.prod.yml](docker-compose.prod.yml)) and Caddy on the host for HTTPS. **[DEPLOY.md](DEPLOY.md)** has the step-by-step guide: first setup without a domain (IP mode, testing only), adding the domain later (automatic HTTPS), updates, encrypted backups and restores.
 
 | Area | How |
 |---|---|
-| App server | Gunicorn, configured in [docker/gunicorn.conf.py](docker/gunicorn.conf.py): `WEB_CONCURRENCY` workers (default 2×CPU+1, max 4) × 2 threads, 120 s timeout for slow uploads, workers recycled every ~1000 requests |
+| Settings | Everything comes from `.env` ([.env.example](.env.example)). `DOMAIN` empty = IP mode (plain HTTP, testing only); `DOMAIN=example.com` = HTTPS with secure cookies, HTTPS redirect and HSTS switched on automatically. The app refuses to start without `DJANGO_SECRET_KEY`, or with debug on in domain mode |
+| Request path | Caddy (HTTPS, 60 MB body limit) → nginx on `127.0.0.1:8080` → Gunicorn → Django. Only nginx publishes a port, and only on localhost |
+| App server | Gunicorn ([docker/gunicorn.conf.py](docker/gunicorn.conf.py)): 2 workers × 2 threads (`WEB_CONCURRENCY`, `GUNICORN_THREADS`), 120 s timeout for slow uploads, workers recycled every ~1000 requests |
 | Static files | WhiteNoise serves compressed, cache-busted files collected at image build time |
-| Uploads | Local disk on a persistent volume (`MEDIA_ROOT`), or a private S3-compatible bucket via `S3_*`. Never public: every file goes through a login + role check. With nginx, `MEDIA_ACCEL_REDIRECT_PREFIX=/protected-media/` lets nginx stream the file after Django approves |
-| Upload size | 10 MB per attachment (`ATTACHMENT_MAX_UPLOAD_MB`), 20 MB per report; nginx and the Ingress accept 60 MB per request |
-| Container | `python:3.12-slim`, runs as user `app` (uid 1000), Docker `HEALTHCHECK` on `/healthz` |
-| Health | `/health` and `/healthz` (process up), `/readyz` (database reachable; returns 503 without revealing error details) |
+| Uploads | `media` Docker volume, or optionally a private S3-compatible bucket (`S3_*`). Never public: every file goes through a login + role check, then nginx streams it (`X-Accel-Redirect` to `/protected-media/`) |
+| Upload size | 10 MB per attachment (`ATTACHMENT_MAX_UPLOAD_MB`), 20 MB per report; nginx and Caddy accept 60 MB per request |
+| Container | `python:3.12-slim`, runs as user `app` (uid 1000); healthchecks on web (`/healthz`), db and nginx; logs rotated (10 MB × 3) |
+| Health | `/health` and `/healthz` (process up), `/readyz` (database reachable; 503 without revealing details) |
 | Sign-in protection | Account locked after `MAX_FAILED_LOGINS` (5) wrong passwords until an admin unlocks it; at most `LOGIN_RATE_LIMIT` (20) failed sign-ins per device per 15 minutes; API login limited to `API_LOGIN_RATE` (10/min) |
-| Security headers | HTTPS redirect, HSTS, secure + HttpOnly cookies, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: same-origin`; Django's password validators (min. 8 characters, not common, not numeric, not like the username) |
-| Errors | Friendly 403, 404 and 500 pages in the app's layout; with debug off, no stack trace or technical detail ever reaches the browser |
-| Logs | Everything goes to stdout (`LOG_LEVEL`, `DJANGO_LOG_LEVEL`), so `docker logs` / `kubectl logs` / the host's log viewer show it |
-| Migrations | Run automatically (`RUN_MIGRATIONS=true` in Compose/Render, the init container in Kubernetes) and apply cleanly to an empty PostgreSQL database |
+| Security headers | HTTPS redirect, HSTS, secure + HttpOnly cookies (domain mode), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: same-origin`; Django's password validators |
+| Errors | Friendly 403, 404 and 500 pages; with debug off, no stack trace ever reaches the browser |
+| Migrations | Run automatically when the web container starts (`RUN_MIGRATIONS=true`) |
+| Daily jobs | `scripts/daily_jobs.sh` from cron: mark missed follow-ups, then send reminders |
+| Backups | `scripts/backup.sh`: encrypted database dump + uploads archive, 30 days kept locally, optional off-site copy with rclone; `scripts/restore.sh` restores them |
 
-## Backups (patient records must never be lost)
+Patient records live in **two** places, the database and the uploads, and they must always be backed up and restored together. Deleting in the app is always a soft delete, so most mistakes can be undone from Django admin (`/django-admin/`) without a restore.
 
-Patient records live in **two** places, and both must be backed up together:
-
-1. **The PostgreSQL database**: patients, visits, prescriptions, audit trail.
-2. **The uploads** (`MEDIA_ROOT` volume or the S3 bucket): photos, reports and the old case sheets.
-
-A database backup without the uploads (or the other way round) cannot restore a complete record.
-
-```bash
-# Docker Compose: nightly, e.g. from cron on the host
-docker compose exec -T db pg_dump -U hamsa -Fc hamsa > backups/hamsa-$(date +%F).dump
-docker run --rm -v hamsahomeo_media:/media -v "$PWD/backups":/backup alpine \
-  tar czf /backup/media-$(date +%F).tar.gz -C /media .
-
-# Kubernetes
-kubectl -n hamsa exec hamsa-postgres-0 -- pg_dump -U hamsa -Fc hamsa > hamsa-$(date +%F).dump
-kubectl -n hamsa exec deploy/hamsa-web -- tar czf - -C /app/media . > media-$(date +%F).tar.gz
-
-# Restore (into an empty database)
-pg_restore -U hamsa -d hamsa --clean --if-exists hamsa-2026-11-04.dump
-tar xzf media-2026-11-04.tar.gz -C /path/to/media
-```
-
-* Keep at least 30 daily copies, store one copy **off the clinic premises** (cloud storage, an encrypted external disk taken home), and encrypt it: these files contain medical records.
-* For S3 storage, turn on bucket versioning and copy the bucket elsewhere (e.g. `rclone sync`).
-* Managed databases (Render, Neon): turn on the provider's automatic daily backups as well.
-* **Test a restore** every few months on a spare machine; an untested backup is not a backup.
-* Deleting in the app is always a soft delete, so mistakes can be undone from Django admin (`/django-admin/`) without a restore.
 
 ## Roles and access
 
@@ -356,7 +175,7 @@ Pressing *Save* twice (or re-sending the registration form) never creates the sa
 
 * **Doctors and reception** can schedule from the case record or the patient page, with quick picks of 1 week, 2 weeks, 1 month and 3 months. They can reschedule, cancel or check in from the dashboard and the follow-ups list.
 * **One active follow-up per patient.** This is enforced by a database constraint, and replacing an existing one asks for confirmation.
-* **Daily jobs:** `mark_missed_followups` marks past-date follow-ups as `MISSED`. `send_followup_reminders` handles SMS/WhatsApp, which is disabled by default. Both run from the Kubernetes CronJob.
+* **Daily jobs:** `mark_missed_followups` marks past-date follow-ups as `MISSED`. `send_followup_reminders` handles SMS/WhatsApp, which is disabled by default. Both run daily from cron through `scripts/daily_jobs.sh` (see [DEPLOY.md](DEPLOY.md)).
 
 ### Family links and family history
 
@@ -567,7 +386,7 @@ python manage.py rebuild_family_links
 
 ## Built in for later
 
-* **SMS / WhatsApp:** `core/notifications.py` has a backend interface (the console backend just logs) and an `SMS_ENABLED` / `WHATSAPP_ENABLED` switch. The `send_followup_reminders` command and its CronJob already call it. To go live, plug in a provider such as Twilio, Gupshup or the Meta Cloud API.
+* **SMS / WhatsApp:** `core/notifications.py` has a backend interface (the console backend just logs) and an `SMS_ENABLED` / `WHATSAPP_ENABLED` switch. The `send_followup_reminders` command (run daily by `scripts/daily_jobs.sh`) already calls it. To go live, plug in a provider such as Twilio, Gupshup or the Meta Cloud API.
 * **PDF prescriptions:** the print view is laid out for A4 and saves to PDF from the browser. A server-side renderer such as WeasyPrint can render the same template.
 * **Electronic signature:** each user has a signature image (set on the user edit screen), which is printed on prescriptions.
 
@@ -584,5 +403,6 @@ clinic/     clinical models, case-record form bundle, views, reports, tests
             attachments.py (old case sheets: validation, storage, protected serving)
 restapi/    DRF serializers, viewsets, permissions, Swagger
 templates/  Bootstrap 5 screens      static/  css, js, logo
-k8s/        Kubernetes manifests     docker/  entrypoint, gunicorn.conf.py, nginx.conf
+docker/     entrypoint, gunicorn.conf.py, nginx.conf
+deploy/     Caddyfiles, crontab example  scripts/  server setup, domain, deploy, backup/restore, daily jobs
 ```

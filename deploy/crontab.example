@@ -1,0 +1,15 @@
+# Root crontab for Hamsa Homeopathy. Install with:   sudo crontab -e   (paste the lines below)
+# Output goes to the system journal; read it with:  journalctl -t hamsa-daily   /   journalctl -t hamsa-backup
+#
+# Times: the clinic runs on India time (IST = UTC + 5:30). Check the server clock with `timedatectl`.
+#
+# --- Server clock on UTC (the Hostinger default) -----------------------------------------------
+#   08:00 IST = 02:30 UTC (same day)
+#   02:00 IST = 20:30 UTC (the PREVIOUS evening, so the backup at "20:30" is the 02:00 IST backup)
+30 2  * * *  /opt/hamsa/scripts/daily_jobs.sh 2>&1 | logger -t hamsa-daily
+30 20 * * *  /opt/hamsa/scripts/backup.sh     2>&1 | logger -t hamsa-backup
+#
+# --- Server clock on Asia/Kolkata (after: sudo timedatectl set-timezone Asia/Kolkata) ------------
+# Use these two lines INSTEAD of the two above:
+# 0 8 * * *  /opt/hamsa/scripts/daily_jobs.sh 2>&1 | logger -t hamsa-daily
+# 0 2 * * *  /opt/hamsa/scripts/backup.sh     2>&1 | logger -t hamsa-backup

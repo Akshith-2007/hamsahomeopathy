@@ -1,0 +1,8 @@
+# IP mode (no domain yet): plain HTTP on port 80. For testing only - no real patient data.
+# Installed to /etc/caddy/Caddyfile by scripts/setup_server.sh.
+:80 {
+	request_body {
+		max_size 60MB
+	}
+	reverse_proxy 127.0.0.1:8080
+}

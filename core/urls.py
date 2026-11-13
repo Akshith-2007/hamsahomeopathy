@@ -8,5 +8,4 @@ urlpatterns = [
     path("health", views.healthz, name="health"),
     path("healthz", views.healthz, name="healthz"),
     path("readyz", views.readyz, name="readyz"),
-    path("cron/daily/", views.cron_daily, name="cron_daily"),
 ]
