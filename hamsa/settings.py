@@ -48,16 +48,6 @@ if not DEBUG and SECRET_KEY == _INSECURE_KEY and not env_bool("DJANGO_ALLOW_INSE
     raise ImproperlyConfigured("Set DJANGO_SECRET_KEY (or DJANGO_DEBUG=true for local development).")
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
-if env_bool("DJANGO_ALLOW_LAN"):
-    # Let other devices on the same Wi-Fi reach this PC by its current IP or name.
-    import socket
-
-    _hostname = socket.gethostname()
-    try:
-        _lan_ips = socket.gethostbyname_ex(_hostname)[2]
-    except OSError:
-        _lan_ips = []
-    ALLOWED_HOSTS += [_hostname, f"{_hostname}.local", *_lan_ips]
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 
 INSTALLED_APPS = [

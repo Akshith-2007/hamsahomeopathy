@@ -6,7 +6,6 @@ psycopg[binary]==3.2.3
 Pillow==11.0.0
 whitenoise==6.8.2
 gunicorn==23.0.0
-waitress==3.0.2  # Windows-friendly production server for local Wi-Fi hosting (scripts/start_lan_server.ps1)
 django-storages[s3]==1.14.4  # S3-compatible upload storage (Cloudflare R2 / Backblaze B2 / AWS S3)
 # Pulled in by django-storages[s3]; pinned so every build gets the same S3 client.
 boto3==1.43.118

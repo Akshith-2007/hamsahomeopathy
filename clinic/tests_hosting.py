@@ -51,7 +51,7 @@ class SettingsFromEnvironmentTests(ClinicTestCase):
 
     def settings_with(self, **env):
         base = {k: v for k, v in os.environ.items() if not k.startswith(("VERCEL", "RENDER", "DB_", "SQLITE", "DATABASE"))}
-        # DB_ENGINE=postgres overrides the local .env (Wi-Fi hosting uses SQLite); Vercel has no .env.
+        # DB_ENGINE=postgres overrides a local .env that may use SQLite.
         base.update({"DJANGO_SECRET_KEY": "x" * 60, "DJANGO_DEBUG": "false", "DB_ENGINE": "postgres", **env})
         code = ("import os, json; os.environ['DJANGO_SETTINGS_MODULE']='hamsa.settings';"
                 "from django.conf import settings as s; d=s.DATABASES['default'];"
