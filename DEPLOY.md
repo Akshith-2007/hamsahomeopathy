@@ -158,6 +158,7 @@ Fill in at least these:
 | `POSTGRES_PASSWORD` | the second random value |
 | `DJANGO_ADMIN_PASSWORD` | a strong password for the first `admin` user (at least 8 characters, not a common word, not only numbers) |
 | `CLINIC_NAME`, `CLINIC_ADDRESS`, `CLINIC_PHONE` | the clinic's details |
+| `DB_DATA_DIR`, `MEDIA_DATA_DIR` | *optional:* where the database and uploads are stored, e.g. `/srv/hamsa/postgres` and `/srv/hamsa/media`. Leave empty to use Docker volumes (`/var/lib/docker/volumes/hamsa_pgdata/_data` and `hamsa_media/_data`). **Decide before the first start**: changing it later starts from an empty database (move data with backup + restore) |
 
 Keep `DJANGO_DEBUG=false` and `SEED_DEMO_DATA=false`. Save all these values in your password manager.
 
@@ -366,7 +367,7 @@ Useful commands (run in `/opt/hamsa`):
 
   ```bash
   docker compose -f docker-compose.prod.yml down
-  docker volume rm hamsa_pgdata hamsa_media
+  docker volume rm hamsa_pgdata hamsa_media      # or, if DB_DATA_DIR/MEDIA_DATA_DIR are set: sudo rm -rf those two folders
   nano .env            # set DJANGO_ADMIN_PASSWORD again for the new admin
   scripts/deploy.sh
   ```
