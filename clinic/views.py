@@ -9,6 +9,7 @@ from django.db import transaction
 from django.db.models import Case, Count, IntegerField, Prefetch, Q, Value, When
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -584,14 +585,23 @@ def attachment_upload(request, patient_pk):
     if request.POST.get("visit", "").isdigit():
         visit = m.Visit.objects.filter(pk=request.POST["visit"], patient=patient).first()
     errors += attachsvc.validate_uploads(files, request.user, category, document_date)
+    # The case sheet uploads with fetch() so the doctor's unsaved notes on that page are kept.
+    wants_json = request.headers.get("x-requested-with") == "fetch"
     if errors:
+        if wants_json:
+            return JsonResponse({"ok": False, "errors": errors}, status=400)
         for error in errors:
             messages.error(request, error)
         return redirect(back)
     created = attachsvc.attach(patient, files, category=category, description=request.POST.get("description", "").strip(),
                                document_date=document_date, visit=visit)
-    messages.success(request, f"{len(created)} file{'s' if len(created) != 1 else ''} attached to "
-                              f"{patient.full_name}'s record.")
+    message = f"{len(created)} file{'s' if len(created) != 1 else ''} attached to {patient.full_name}'s record."
+    if wants_json:
+        context = _attachments_context(request, patient)
+        html = render_to_string("clinic/_attachments.html", {**context, "compact": True, "hide_delete": True},
+                                request=request)
+        return JsonResponse({"ok": True, "message": message, "count": len(context["attachments"] or []), "html": html})
+    messages.success(request, message)
     return redirect(back)
 
 

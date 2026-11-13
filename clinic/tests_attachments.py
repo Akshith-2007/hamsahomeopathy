@@ -243,6 +243,44 @@ class AttachmentScreenTests(AttachmentTestCase):
         self.assertIn('id="tab-attachments"', html)
         self.assertIn("old-case-2015.pdf", html)
 
+    def test_case_sheet_has_documents_panel_below_patient_details(self):
+        attachment = self.make_attachment(name="old-case-2015.pdf")
+        self.login(Role.DOCTOR)  # doctors may delete attachments, but not from inside the case-sheet form
+        html = self.client.get(reverse("visit_record", args=[self.visit.pk])).content.decode()
+        panel = html.index('id="visit-documents"')
+        self.assertLess(html.index('id="sec-patient"'), panel)
+        self.assertIn(reverse("attachment_file", args=[attachment.pk]), html[panel:])
+        self.assertNotIn(reverse("attachment_delete", args=[attachment.pk]), html[panel:])
+        # Upload controls belong to a separate form that starts after the case-sheet form ends (no nesting).
+        self.assertIn('form="attach-form"', html[panel:])
+        case_sheet_end = html.index("</form>", html.index('id="case-record"'))
+        self.assertGreater(html.index('id="attach-form"'), case_sheet_end)
+        self.assertIn(f'name="visit" value="{self.visit.pk}"', html[case_sheet_end:])
+
+    def test_case_sheet_upload_links_the_visit_and_returns_the_new_list(self):
+        self.login(Role.DOCTOR)
+        response = self.client.post(reverse("attachment_upload", args=[self.patient.pk]),
+                                    {"attachment_files": [upload("todays-scan.pdf")], "category": "SCAN",
+                                     "visit": self.visit.pk}, headers={"x-requested-with": "fetch"})
+        data = response.json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["count"], 1)
+        attachment = self.patient.attachments.get()
+        self.assertEqual(attachment.visit, self.visit)
+        self.assertIn(reverse("attachment_file", args=[attachment.pk]), data["html"])
+        self.assertNotIn(reverse("attachment_delete", args=[attachment.pk]), data["html"])
+
+    def test_case_sheet_upload_problems_come_back_as_json(self):
+        self.login(Role.DOCTOR)
+        response = self.client.post(reverse("attachment_upload", args=[self.patient.pk]),
+                                    {"attachment_files": [upload("notes.txt", b"hello", "text/plain")],
+                                     "category": "OTHER", "visit": self.visit.pk},
+                                    headers={"x-requested-with": "fetch"})
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.json()["ok"])
+        self.assertIn("not a supported file type", response.json()["errors"][0])
+        self.assertFalse(self.patient.attachments.exists())
+
     def test_lab_patient_reports_page_shows_lab_reports_only(self):
         self.make_attachment(name="private-case.pdf")
         self.make_attachment(category=m.PatientAttachment.Category.LAB_REPORT, name="outside-cbc.pdf")

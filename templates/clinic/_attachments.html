@@ -1,4 +1,5 @@
-{# Patient attachments table. Needs `attachments` and `attachment_access`; `compact` hides the uploader columns. #}
+{# Patient attachments table. Needs `attachments` and `attachment_access`; `compact` hides the uploader columns;
+   `hide_delete` drops the delete buttons (required inside another form: forms cannot be nested). #}
 <div class="table-responsive">
   <table class="table table-hover mb-0 align-middle">
     <thead class="table-light"><tr><th>File</th><th>Category</th><th>Document date</th>{% if not compact %}<th>Uploaded by</th>{% endif %}<th>Uploaded on</th><th class="text-end">Actions</th></tr></thead>
@@ -17,7 +18,7 @@
         <td class="text-end text-nowrap">
           <a class="btn btn-sm btn-outline-primary" href="{% url 'attachment_file' a.pk %}" target="_blank" rel="noopener" title="View"><i class="bi bi-eye"></i></a>
           <a class="btn btn-sm btn-outline-secondary" href="{% url 'attachment_file' a.pk %}?download=1" title="Download"><i class="bi bi-download"></i></a>
-          {% if attachment_access.delete %}
+          {% if attachment_access.delete and not hide_delete %}
           <form method="post" action="{% url 'attachment_delete' a.pk %}" class="d-inline" data-confirm="Remove “{{ a.original_filename }}” from this patient's record? A copy is kept in the audit trail.">{% csrf_token %}
             <input type="hidden" name="next" value="{{ request.get_full_path }}#attachments">
             <button class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
